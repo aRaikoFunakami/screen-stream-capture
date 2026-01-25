@@ -55,6 +55,12 @@ make setup
 
 ブラウザで http://localhost:5173 にアクセス
 
+バックエンド API ドキュメント（FastAPI 自動生成）:
+
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- OpenAPI: http://localhost:8000/openapi.json
+
 ### コマンド一覧
 
 | コマンド | 説明 |
@@ -122,12 +128,14 @@ import { H264Player } from 'react-android-screen'
 
 ```
 screen-stream-capture/
+├── backend/                        # 公式 Backend (FastAPI)
 ├── packages/
 │   ├── android-screen-stream/     # Python ライブラリ
 │   └── react-android-screen/      # React コンポーネント
 ├── examples/
 │   └── simple-viewer/             # 使用例
-├── vendor/                        # scrcpy-server.jar (make setup でダウンロード)
+│       └── frontend/              # フロントエンドサンプル
+├── vendor/                         # scrcpy-server.jar (make setup でダウンロード)
 ├── docker-compose.yml
 ├── Makefile
 └── README.md
@@ -137,6 +145,7 @@ screen-stream-capture/
 
 - [アーキテクチャ詳細](docs/architecture.md)
 - [API リファレンス](docs/api-reference.md)
+- [Backend API（FastAPI / OpenAPI）](docs/backend-openapi.md)
 - [途中参加（late join）で白画面になる問題と解決策](docs/late-join.md)
 - [Python ライブラリ](packages/android-screen-stream/README.md)
 - [React コンポーネント](packages/react-android-screen/README.md)

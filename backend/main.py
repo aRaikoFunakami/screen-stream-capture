@@ -1,9 +1,12 @@
 """Screen Stream Capture Backend - FastAPI Application
 
-元の backend の機能を packages/android-screen-stream ライブラリを利用して実装。
+ライブラリ(pacakges/android-screen-stream)を利用し、以下のWeb APIを提供する公式バックエンド。
+
 - デバイス管理 (DeviceManager, DeviceMonitor, DeviceRegistry)
 - SSE によるリアルタイムデバイス通知 (/api/events)
 - H.264 WebSocket ストリーミング (/api/ws/stream/{serial})
+
+フロントエンドは examples/simple-viewer/frontend をサンプルとして提供する。
 """
 
 import asyncio
@@ -19,40 +22,31 @@ from fastapi.responses import StreamingResponse
 from device_manager import get_device_manager
 from sse_manager import get_sse_manager
 
-# android-screen-stream ライブラリを使用
-from android_screen_stream import StreamManager, StreamConfig
+from android_screen_stream import StreamConfig, StreamManager
 
-# ロギング設定
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# scrcpy-server.jar のパス
-SCRCPY_SERVER_JAR = os.environ.get(
-    "SCRCPY_SERVER_JAR",
-    "/app/vendor/scrcpy-server.jar"
-)
+SCRCPY_SERVER_JAR = os.environ.get("SCRCPY_SERVER_JAR", "/app/vendor/scrcpy-server.jar")
 
-# StreamManager インスタンス（packages ライブラリを使用）
 stream_manager: StreamManager | None = None
 
 
-def setup_device_change_notifier():
+def setup_device_change_notifier() -> None:
     """デバイス変更時に SSE で通知する設定"""
     device_manager = get_device_manager()
     sse_manager = get_sse_manager()
-    
-    def on_device_change():
-        """デバイス変更時のコールバック"""
+
+    def on_device_change() -> None:
         asyncio.create_task(notify_device_change())
-    
-    async def notify_device_change():
-        """デバイス一覧を SSE でブロードキャスト"""
+
+    async def notify_device_change() -> None:
         devices = await device_manager.list_devices()
         await sse_manager.broadcast("devices", [d.to_dict() for d in devices])
-    
+
     device_manager.on_change(on_device_change)
 
 
@@ -60,25 +54,21 @@ def setup_device_change_notifier():
 async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
     global stream_manager
-    
-    # 起動時
+
     logger.info("Starting services...")
     logger.info(f"Using scrcpy-server.jar: {SCRCPY_SERVER_JAR}")
-    
-    # DeviceManager を起動
+
     device_manager = get_device_manager()
     setup_device_change_notifier()
     await device_manager.start()
-    
-    # StreamManager を初期化（packages ライブラリ）
+
     stream_manager = StreamManager(
         server_jar=SCRCPY_SERVER_JAR,
         default_config=StreamConfig.balanced(),
     )
-    
+
     yield
-    
-    # 終了時
+
     logger.info("Stopping services...")
     if stream_manager:
         await stream_manager.stop_all()
@@ -92,7 +82,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 設定（開発用：全許可）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -106,10 +95,7 @@ app.add_middleware(
 @app.get("/api/healthz")
 async def healthz() -> dict:
     """ヘルスチェックエンドポイント"""
-    return {
-        "status": "ok",
-        "version": "0.1.0",
-    }
+    return {"status": "ok", "version": "0.1.0"}
 
 
 @app.get("/api/devices")
@@ -134,25 +120,20 @@ async def get_device(serial: str) -> dict:
 async def events():
     """SSE エンドポイント - デバイス変更をリアルタイム通知"""
     sse_manager = get_sse_manager()
-    
+
     async def event_generator():
-        # 接続時に現在のデバイス一覧を送信
         device_manager = get_device_manager()
         devices = await device_manager.list_devices()
         data = json.dumps([d.to_dict() for d in devices])
         yield f"event: devices\ndata: {data}\n\n"
-        
-        # 以降はブロードキャストを受信
+
         async for message in sse_manager.subscribe():
             yield message
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
 
 
@@ -166,36 +147,28 @@ async def list_sessions():
 
 @app.websocket("/api/ws/stream/{serial}")
 async def websocket_stream(websocket: WebSocket, serial: str):
-    """WebSocket経由でraw H.264ストリームを送信
-    
-    packages/android-screen-stream の StreamManager を使用して
-    JMuxer等のブラウザライブラリでデコードして再生
-    """
+    """WebSocket 経由で raw H.264 を送信"""
     await websocket.accept()
-    
+
     if not stream_manager:
         await websocket.close(code=1011, reason="Server not ready")
         return
-    
-    # デバイスの存在確認
+
     device_manager = get_device_manager()
     device = await device_manager.get_device(serial)
     if device is None:
         await websocket.close(code=4004, reason=f"Device {serial} not found")
         return
-    
+
     logger.info(f"WebSocket H.264 stream started for {serial}")
-    
+
     try:
-        # StreamSession を取得または作成（packages ライブラリを使用）
         session = await stream_manager.get_or_create(serial)
-        
-        # ストリームを購読
         async for chunk in session.subscribe():
             if not chunk:
                 break
             await websocket.send_bytes(chunk)
-            
+
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for {serial}")
     except Exception as e:
@@ -206,4 +179,5 @@ async def websocket_stream(websocket: WebSocket, serial: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

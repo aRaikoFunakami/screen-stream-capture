@@ -356,8 +356,8 @@ make setup
 
 ```bash
 # バックエンド
-cd examples/simple-viewer/backend
-uv run uvicorn main:app --host 0.0.0.0 --port 8000
+cd backend
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # フロントエンド
 cd examples/simple-viewer/frontend

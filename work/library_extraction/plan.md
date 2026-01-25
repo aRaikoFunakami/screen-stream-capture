@@ -314,7 +314,7 @@ uv add --editable ../packages/android-screen-stream
   - [ ] frontend サービス（Vite dev server または nginx）
   - [ ] ボリュームマウント（editable install 対応）
 - [ ] `Dockerfile` 作成
-  - [ ] `examples/simple-viewer/backend/Dockerfile`
+  - [ ] `backend/Dockerfile`
   - [ ] `examples/simple-viewer/frontend/Dockerfile`
 - [ ] `Makefile` 新規作成（現在の Makefile は削除して置き換え）
   - [ ] `make setup` - 初期セットアップ（依存インストール、Docker ビルド、起動）
@@ -568,13 +568,13 @@ services:
   backend:
     build:
       context: .
-      dockerfile: examples/simple-viewer/backend/Dockerfile
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
       # editable install のためソースをマウント
       - ./packages/android-screen-stream:/app/packages/android-screen-stream:ro
-      - ./examples/simple-viewer/backend:/app/backend
+      - ./backend:/app/backend
     environment:
       - ADB_SERVER_HOST=host.docker.internal  # ホストの adb server を使用
     extra_hosts:

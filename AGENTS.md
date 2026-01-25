@@ -27,6 +27,7 @@
 | **[README.md](./README.md)** | プロジェクト全体の把握、セットアップ方法 |
 | **[docs/architecture.md](./docs/architecture.md)** | アーキテクチャ詳細 |
 | **[docs/api-reference.md](./docs/api-reference.md)** | API リファレンス |
+| **[docs/backend-openapi.md](./docs/backend-openapi.md)** | FastAPI の自動生成 API ドキュメント（/docs）の見方 |
 
 **重要**: 一般的なフレームワークの知識だけで推測して作業しないこと。プロジェクト固有のルールや設定を必ず確認してください。
 
@@ -73,6 +74,7 @@ screen-stream-capture/
 ├── README.md                      # プロジェクト概要
 ├── Makefile                       # ビルド・起動コマンド
 ├── docker-compose.yml             # Docker Compose 設定
+├── backend/                        # 公式 Backend (FastAPI)
 ├── packages/
 │   ├── android-screen-stream/     # Python ライブラリ
 │   │   ├── pyproject.toml
@@ -92,7 +94,6 @@ screen-stream-capture/
 │           └── types.ts
 ├── examples/
 │   └── simple-viewer/             # 使用例
-│       ├── backend/
 │       └── frontend/
 ├── vendor/                        # scrcpy-server.jar（make setup でダウンロード）
 ├── docs/                          # ドキュメント
@@ -119,6 +120,41 @@ make down
 
 # 完全再構築
 make rebuild
+```
+
+### API ドキュメント（FastAPI / OpenAPI）
+
+公式 backend（FastAPI）は OpenAPI を自動生成します。手書き仕様ではなく、
+**実装から生成される OpenAPI を正**としてドキュメント運用します。
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+
+#### API 変更時のルール（重要）
+
+API を追加/変更する場合は、FastAPI の仕組みを最大限活かして以下を必ず行うこと:
+
+- ルータには `summary` / `description` を付ける
+- `response_model` を付けてレスポンススキーマを固定する
+- `tags` で分類し、`/docs` の見通しを良くする
+
+#### 「自動生成されるもの」をどこに書くか
+
+OpenAPI 自動生成は「生成物（openapi.json）をリポジトリに置く」のではなく、
+**ソースコード側にドキュメント情報を埋め込む**運用にする。
+
+- ルータ実装: `backend/app/api/endpoints/` に `summary` / `description` / `response_model` を書く
+- スキーマ定義: `backend/app/api/schemas/` の Pydantic `BaseModel` + `Field(...)` で説明・例を付ける
+   - 例: `Field(description=..., examples=[...])`
+
+※ `openapi.json` は **実行時にオンデマンド生成**されるため、原則として Git 管理しない。
+（例外: クライアント自動生成や契約テストでスキーマを成果物扱いする場合）
+
+確認:
+
+```bash
+curl -fsS http://localhost:8000/openapi.json | head -c 200
 ```
 
 ### 依存関係管理

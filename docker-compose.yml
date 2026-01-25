@@ -2,13 +2,13 @@ services:
   backend:
     build:
       context: .
-      dockerfile: examples/simple-viewer/backend/Dockerfile
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
       # editable install のためソースをマウント
       - ./packages/android-screen-stream:/app/packages/android-screen-stream:ro
-      - ./examples/simple-viewer/backend:/app/backend
+      - ./backend:/app/backend
       - ./vendor:/app/vendor:ro
     environment:
       - SCRCPY_SERVER_JAR=/app/vendor/scrcpy-server.jar
@@ -18,7 +18,7 @@ services:
       - SCRCPY_CONNECT_HOST=host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
