@@ -119,11 +119,15 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
     }
   }, [wsUrl, fps, disconnect, onConnected, onDisconnected, onError])
 
-  // 自動接続
+  // 自動接続 - wsUrl が変わった時のみ再接続
   useEffect(() => {
     if (autoConnect) {
       // video 要素がマウントされてから接続
-      const timer = setTimeout(connect, 100)
+      const timer = setTimeout(() => {
+        if (videoRef.current) {
+          connect()
+        }
+      }, 100)
       return () => {
         clearTimeout(timer)
         disconnect()
@@ -132,7 +136,8 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
     return () => {
       disconnect()
     }
-  }, [autoConnect, connect, disconnect])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsUrl, autoConnect])
 
   return {
     videoRef,

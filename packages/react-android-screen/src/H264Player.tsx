@@ -2,6 +2,7 @@
  * H264Player - H.264 ストリーミングプレイヤーコンポーネント
  */
 
+import { useRef, useEffect } from 'react'
 import { useAndroidStream } from './useAndroidStream'
 import type { H264PlayerProps, StreamStatus } from './types'
 
@@ -68,20 +69,49 @@ export function H264Player({
   autoReconnect = true,
   reconnectInterval = 3000,
 }: H264PlayerProps) {
-  const { videoRef, status, stats, connect } = useAndroidStream({
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isUnmountedRef = useRef(false)
+
+  const { videoRef, status, stats, connect, disconnect } = useAndroidStream({
     wsUrl,
     autoConnect: true,
     fps,
     onConnected,
-    onDisconnected: () => {
-      onDisconnected?.()
-      // 自動再接続
-      if (autoReconnect) {
-        setTimeout(connect, reconnectInterval)
-      }
-    },
+    onDisconnected,
     onError,
   })
+
+  // 自動再接続の処理
+  useEffect(() => {
+    if (status === 'disconnected' && autoReconnect && !isUnmountedRef.current) {
+      // 既存のタイマーをクリア
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+      }
+      // 再接続をスケジュール
+      reconnectTimerRef.current = setTimeout(() => {
+        if (!isUnmountedRef.current) {
+          console.log('Auto-reconnecting...')
+          connect()
+        }
+      }, reconnectInterval)
+    }
+
+    return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+      }
+    }
+  }, [status, autoReconnect, reconnectInterval, connect])
+
+  // アンマウント時のクリーンアップ
+  useEffect(() => {
+    isUnmountedRef.current = false
+    return () => {
+      isUnmountedRef.current = true
+      disconnect()
+    }
+  }, [disconnect])
 
   return (
     <div className={`relative bg-black rounded-lg overflow-hidden ${className}`}>
