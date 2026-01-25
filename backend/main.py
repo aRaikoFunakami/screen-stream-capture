@@ -1,16 +1,16 @@
 """Screen Stream Capture Backend - FastAPI Application"""
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from device_manager import get_device_manager
-from models import DeviceInfo
-from websocket_manager import get_connection_manager
+from sse_manager import get_sse_manager
 
 # ロギング設定
 logging.basicConfig(
@@ -21,21 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 def setup_device_change_notifier():
-    """デバイス変更時に WebSocket で通知する設定"""
+    """デバイス変更時に SSE で通知する設定"""
     device_manager = get_device_manager()
-    connection_manager = get_connection_manager()
+    sse_manager = get_sse_manager()
     
     def on_device_change():
         """デバイス変更時のコールバック"""
         asyncio.create_task(notify_device_change())
     
     async def notify_device_change():
-        """デバイス一覧を WebSocket でブロードキャスト"""
+        """デバイス一覧を SSE でブロードキャスト"""
         devices = await device_manager.list_devices()
-        await connection_manager.broadcast({
-            "type": "devices",
-            "data": [d.to_dict() for d in devices],
-        })
+        await sse_manager.broadcast("devices", [d.to_dict() for d in devices])
     
     device_manager.on_change(on_device_change)
 
@@ -100,29 +97,28 @@ async def get_device(serial: str) -> dict:
     return device.to_dict()
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket エンドポイント - デバイス変更をリアルタイム通知"""
-    connection_manager = get_connection_manager()
-    await connection_manager.connect(websocket)
+@app.get("/api/events")
+async def events():
+    """SSE エンドポイント - デバイス変更をリアルタイム通知"""
+    sse_manager = get_sse_manager()
     
-    try:
+    async def event_generator():
         # 接続時に現在のデバイス一覧を送信
         device_manager = get_device_manager()
         devices = await device_manager.list_devices()
-        await connection_manager.send_to(websocket, {
-            "type": "devices",
-            "data": [d.to_dict() for d in devices],
-        })
+        data = json.dumps([d.to_dict() for d in devices])
+        yield f"event: devices\ndata: {data}\n\n"
         
-        # 接続を維持（ping/pong）
-        while True:
-            try:
-                data = await websocket.receive_text()
-                # クライアントからのメッセージは今のところ無視
-                logger.debug(f"Received from client: {data}")
-            except WebSocketDisconnect:
-                break
-    finally:
-        await connection_manager.disconnect(websocket)
+        # 以降はブロードキャストを受信
+        async for message in sse_manager.subscribe():
+            yield message
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 

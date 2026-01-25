@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface DeviceInfo {
   serial: string
@@ -13,47 +13,8 @@ function App() {
   const [health, setHealth] = useState<{ status: string; version: string } | null>(null)
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
-  const wsRef = useRef<WebSocket | null>(null)
-
-  // WebSocket 接続
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-
-    setWsStatus('connecting')
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
-
-    ws.onopen = () => {
-      console.log('WebSocket connected')
-      setWsStatus('connected')
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data)
-        if (message.type === 'devices') {
-          setDevices(message.data)
-        }
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err)
-      }
-    }
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected')
-      setWsStatus('disconnected')
-      wsRef.current = null
-      // 自動再接続
-      setTimeout(connectWebSocket, 3000)
-    }
-
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err)
-    }
-
-    wsRef.current = ws
-  }, [])
+  const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     // 初期データ取得
@@ -62,18 +23,43 @@ function App() {
       .then((data) => setHealth(data))
       .catch((err) => setError(err.message))
 
-    fetch('/api/devices')
-      .then((res) => res.json())
-      .then((data) => setDevices(data))
-      .catch((err) => console.error('Failed to fetch devices:', err))
+    // SSE 接続
+    const connectSSE = () => {
+      setSseStatus('connecting')
+      const eventSource = new EventSource('/api/events')
 
-    // WebSocket 接続
-    connectWebSocket()
+      eventSource.onopen = () => {
+        console.log('SSE connected')
+        setSseStatus('connected')
+      }
+
+      eventSource.addEventListener('devices', (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          setDevices(data)
+        } catch (err) {
+          console.error('Failed to parse SSE message:', err)
+        }
+      })
+
+      eventSource.onerror = () => {
+        console.log('SSE disconnected')
+        setSseStatus('disconnected')
+        eventSource.close()
+        eventSourceRef.current = null
+        // 自動再接続
+        setTimeout(connectSSE, 3000)
+      }
+
+      eventSourceRef.current = eventSource
+    }
+
+    connectSSE()
 
     return () => {
-      wsRef.current?.close()
+      eventSourceRef.current?.close()
     }
-  }, [connectWebSocket])
+  }, [])
 
   const getStateColor = (state: string) => {
     switch (state) {
@@ -109,15 +95,15 @@ function App() {
           <div className="flex items-center gap-2">
             <span
               className={`w-2 h-2 rounded-full ${
-                wsStatus === 'connected'
+                sseStatus === 'connected'
                   ? 'bg-green-400'
-                  : wsStatus === 'connecting'
+                  : sseStatus === 'connecting'
                   ? 'bg-yellow-400 animate-pulse'
                   : 'bg-red-400'
               }`}
             />
             <span className="text-sm opacity-80">
-              {wsStatus === 'connected' ? 'リアルタイム接続中' : wsStatus === 'connecting' ? '接続中...' : '未接続'}
+              {sseStatus === 'connected' ? 'リアルタイム接続中' : sseStatus === 'connecting' ? '接続中...' : '未接続'}
             </span>
           </div>
         </div>
