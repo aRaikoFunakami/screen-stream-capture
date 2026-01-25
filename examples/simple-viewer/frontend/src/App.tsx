@@ -20,7 +20,7 @@ function App() {
 
   useEffect(() => {
     // 初期データ取得
-    fetch('/healthz')
+    fetch('/api/healthz')
       .then((res) => res.json())
       .then((data) => setHealth(data))
       .catch((err) => setError(err.message))

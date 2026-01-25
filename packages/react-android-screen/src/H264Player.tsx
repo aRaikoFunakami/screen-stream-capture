@@ -71,19 +71,27 @@ export function H264Player({
 }: H264PlayerProps) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isUnmountedRef = useRef(false)
+  const hasConnectedOnceRef = useRef(false)
+  const connectRef = useRef<() => void>(() => {})
 
   const { videoRef, status, stats, connect, disconnect } = useAndroidStream({
     wsUrl,
     autoConnect: true,
     fps,
-    onConnected,
+    onConnected: () => {
+      hasConnectedOnceRef.current = true
+      onConnected?.()
+    },
     onDisconnected,
     onError,
   })
 
-  // 自動再接続の処理
+  // connect を ref に保存して依存配列の問題を回避
+  connectRef.current = connect
+
+  // 自動再接続の処理（一度接続した後のみ）
   useEffect(() => {
-    if (status === 'disconnected' && autoReconnect && !isUnmountedRef.current) {
+    if (status === 'disconnected' && autoReconnect && hasConnectedOnceRef.current && !isUnmountedRef.current) {
       // 既存のタイマーをクリア
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
@@ -92,7 +100,7 @@ export function H264Player({
       reconnectTimerRef.current = setTimeout(() => {
         if (!isUnmountedRef.current) {
           console.log('Auto-reconnecting...')
-          connect()
+          connectRef.current()
         }
       }, reconnectInterval)
     }
@@ -102,13 +110,16 @@ export function H264Player({
         clearTimeout(reconnectTimerRef.current)
       }
     }
-  }, [status, autoReconnect, reconnectInterval, connect])
+  }, [status, autoReconnect, reconnectInterval])
 
   // アンマウント時のクリーンアップ
   useEffect(() => {
     isUnmountedRef.current = false
     return () => {
       isUnmountedRef.current = true
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+      }
       disconnect()
     }
   }, [disconnect])

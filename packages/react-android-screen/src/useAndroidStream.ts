@@ -117,24 +117,32 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       setStatus('disconnected')
       onDisconnected?.()
     }
-  }, [wsUrl, fps, disconnect, onConnected, onDisconnected, onError])
+  }, [wsUrl, fps, onConnected, onDisconnected, onError])
+
+  // disconnect を ref に保存して依存配列の問題を回避
+  const disconnectRef = useRef(disconnect)
+  disconnectRef.current = disconnect
 
   // 自動接続 - wsUrl が変わった時のみ再接続
   useEffect(() => {
+    let mounted = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+
     if (autoConnect) {
       // video 要素がマウントされてから接続
-      const timer = setTimeout(() => {
-        if (videoRef.current) {
+      timer = setTimeout(() => {
+        if (mounted && videoRef.current) {
           connect()
         }
       }, 100)
-      return () => {
-        clearTimeout(timer)
-        disconnect()
-      }
     }
+
     return () => {
-      disconnect()
+      mounted = false
+      if (timer) {
+        clearTimeout(timer)
+      }
+      disconnectRef.current()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, autoConnect])

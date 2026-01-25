@@ -103,6 +103,7 @@ app.add_middleware(
 
 
 @app.get("/healthz")
+@app.get("/api/healthz")
 async def healthz() -> dict:
     """ヘルスチェックエンドポイント"""
     return {
