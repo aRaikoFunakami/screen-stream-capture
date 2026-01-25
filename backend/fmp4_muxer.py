@@ -23,7 +23,7 @@ class Fmp4Muxer:
     シェルパイプラインを使用して uvloop との互換性を確保。
     """
 
-    def __init__(self, record_path: Path, fps: int = 15):
+    def __init__(self, record_path: Path, fps: int = 10):
         self.record_path = record_path
         self.fps = fps
         self._process: Optional[asyncio.subprocess.Process] = None
@@ -46,19 +46,16 @@ class Fmp4Muxer:
             raise RuntimeError(f"Record file not ready after 30s: {self.record_path}")
 
         # シェルパイプラインとして実行（uvloop 互換）
-        # -probesize/-analyzeduration を最小化して初期遅延を削減
+        # まずは手動で動作確認できた構成に極力寄せて、余計な低遅延フラグを付けない。
         shell_cmd = (
             f"tail -c +1 -f '{self.record_path}' | "
-            f"ffmpeg -hide_banner -nostdin -loglevel warning "
-            f"-probesize 32768 -analyzeduration 0 "
-            f"-fflags +genpts+nobuffer+flush_packets -flags low_delay "
+            f"ffmpeg -hide_banner -loglevel error -nostdin "
             f"-i pipe:0 "
-            f"-map 0:v:0 -an "
+            f"-an "
             f"-vf fps={self.fps} "
             f"-c:v libx264 -preset ultrafast -tune zerolatency "
-            f"-g 15 -keyint_min 15 -sc_threshold 0 "
-            f"-f mp4 -movflags frag_keyframe+empty_moov+default_base_moof+faststart "
-            f"-frag_duration 100000 "
+            f"-g {self.fps} -keyint_min {self.fps} -sc_threshold 0 "
+            f"-f mp4 -movflags frag_keyframe+empty_moov+default_base_moof "
             f"pipe:1"
         )
         logger.info(f"Starting muxer pipeline: {shell_cmd}")
@@ -99,7 +96,7 @@ class Fmp4Muxer:
 
         try:
             while self._running:
-                chunk = await self._process.stdout.read(65536)  # 64KB chunks
+                chunk = await self._process.stdout.read(4096)  # 4KB chunks (low latency)
                 if not chunk:
                     break
                 yield chunk

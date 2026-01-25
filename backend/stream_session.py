@@ -83,7 +83,7 @@ class StreamSession:
 
     async def subscribe(self) -> AsyncGenerator[bytes, None]:
         """ストリームを購読"""
-        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
+        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
 
         async with self._lock:
             self._subscribers.append(queue)

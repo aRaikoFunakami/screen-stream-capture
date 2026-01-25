@@ -6,10 +6,15 @@ tail -f で追いかけながら ffmpeg に渡す方式を採用。
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# ローカルビルドの scrcpy パス（プロジェクト内）
+SCRCPY_PATH = Path(__file__).parent.parent / "scrcpy" / "build" / "app" / "scrcpy"
+SCRCPY_SERVER_PATH = Path(__file__).parent.parent / "scrcpy" / "scrcpy-server-v3.3.4"
 
 
 def _safe_serial_for_path(serial: str) -> str:
@@ -49,7 +54,7 @@ class ScrcpyRecorder:
         self._cleanup_record_file()
 
         cmd = [
-            "scrcpy",
+            str(SCRCPY_PATH),
             "-s", self.serial,
             "--no-playback",
             "--no-window",
@@ -63,10 +68,16 @@ class ScrcpyRecorder:
 
         logger.info(f"Starting scrcpy recorder for {self.serial}: {' '.join(cmd)}")
 
+        # 環境変数でサーバーパスを指定
+        env = os.environ.copy()
+        if SCRCPY_SERVER_PATH.exists():
+            env.setdefault("SCRCPY_SERVER_PATH", str(SCRCPY_SERVER_PATH))
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         self._running = True
 

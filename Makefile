@@ -40,3 +40,37 @@ frontend:
 # ヘルスチェック
 health:
 	curl -s http://localhost:8000/healthz | python -m json.tool
+
+# バックグラウンドで開発サーバー起動
+dev-bg:
+	@echo "Starting servers in background..."
+	@lsof -ti :8000 | xargs kill -9 2>/dev/null || true
+	@lsof -ti :5173 | xargs kill -9 2>/dev/null || true
+	@sleep 1
+	@cd backend && nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+	@cd frontend && nohup npm run dev > ../frontend.log 2>&1 &
+	@sleep 3
+	@$(MAKE) status
+
+# サーバー停止
+stop:
+	@echo "Stopping servers..."
+	@lsof -ti :8000 | xargs kill -9 2>/dev/null || true
+	@lsof -ti :5173 | xargs kill -9 2>/dev/null || true
+	@echo "Servers stopped"
+
+# サーバー状態確認
+status:
+	@echo "=== Server Status ==="
+	@echo "Backend (8000):"
+	@lsof -i :8000 2>/dev/null | grep LISTEN || echo "  NOT RUNNING"
+	@echo "Frontend (5173):"
+	@lsof -i :5173 2>/dev/null | grep LISTEN || echo "  NOT RUNNING"
+
+# ログ確認
+logs:
+	@echo "=== Backend Log (last 20 lines) ==="
+	@tail -20 backend/server.log 2>/dev/null || echo "No log file"
+	@echo ""
+	@echo "=== Frontend Log (last 20 lines) ==="
+	@tail -20 frontend.log 2>/dev/null || echo "No log file"

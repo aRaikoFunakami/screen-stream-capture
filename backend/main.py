@@ -5,13 +5,14 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from device_manager import get_device_manager
 from sse_manager import get_sse_manager
 from stream_session import get_stream_manager
+from h264_stream_session import get_h264_stream_manager
 
 # ロギング設定
 logging.basicConfig(
@@ -52,7 +53,9 @@ async def lifespan(app: FastAPI):
     # 終了時
     logger.info("Stopping services...")
     stream_manager = get_stream_manager()
+    h264_manager = get_h264_stream_manager()
     await stream_manager.stop_all()
+    await h264_manager.stop_all()
     await device_manager.stop()
 
 
@@ -148,3 +151,36 @@ async def stream_device(serial: str):
         },
     )
 
+
+@app.websocket("/api/ws/stream/{serial}")
+async def websocket_stream(websocket: WebSocket, serial: str):
+    """WebSocket経由でraw H.264ストリームを送信
+    
+    JMuxer等のブラウザライブラリでデコードして再生
+    """
+    await websocket.accept()
+    
+    # デバイスの存在確認
+    device_manager = get_device_manager()
+    device = await device_manager.get_device(serial)
+    if device is None:
+        await websocket.close(code=4004, reason=f"Device {serial} not found")
+        return
+    
+    logger.info(f"WebSocket H.264 stream started for {serial}")
+    
+    # H.264ストリームセッションを取得または作成
+    h264_manager = get_h264_stream_manager()
+    session = await h264_manager.get_or_create(serial)
+    
+    try:
+        async for chunk in session.subscribe():
+            if not chunk:
+                break
+            await websocket.send_bytes(chunk)
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for {serial}")
+    except Exception as e:
+        logger.error(f"WebSocket error for {serial}: {e}")
+    finally:
+        logger.info(f"WebSocket H.264 stream ended for {serial}")

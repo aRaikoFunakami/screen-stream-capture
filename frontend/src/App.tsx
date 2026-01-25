@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { VideoPlayer } from './components/VideoPlayer'
+import { H264Player } from './components/H264Player'
 
 interface DeviceInfo {
   serial: string
@@ -185,10 +185,27 @@ function App() {
       </main>
 
       {selectedDevice && (
-        <VideoPlayer
-          serial={selectedDevice}
-          onClose={() => setSelectedDevice(null)}
-        />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">{selectedDevice}</h3>
+              <button
+                onClick={() => setSelectedDevice(null)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4">
+              <H264Player
+                serial={selectedDevice}
+                onError={(error) => console.error('Player error:', error)}
+                onConnected={() => console.log('Stream connected')}
+                onDisconnected={() => console.log('Stream disconnected')}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
