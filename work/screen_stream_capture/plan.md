@@ -63,36 +63,43 @@
 
 ### TODO
 
-- [ ] **2.1** DeviceMonitor 実装
-  - [ ] `backend/device_monitor.py` 作成
-  - [ ] `adb track-devices` サブプロセス起動
-  - [ ] イベントパース（add/remove/state）
-  - [ ] コールバック登録機構
+- [x] **2.1** DeviceMonitor 実装
+  - [x] `backend/device_monitor.py` 作成
+  - [x] `adb track-devices` サブプロセス起動
+  - [x] イベントパース（add/remove/state）
+  - [x] コールバック登録機構
 
-- [ ] **2.2** DeviceRegistry 実装
-  - [ ] `backend/device_registry.py` 作成
-  - [ ] デバイス情報データクラス定義
-  - [ ] 登録/削除/取得メソッド
-  - [ ] 状態変更通知
+- [x] **2.2** DeviceRegistry 実装
+  - [x] `backend/device_registry.py` 作成
+  - [x] デバイス情報データクラス定義
+  - [x] 登録/削除/取得メソッド
+  - [x] 状態変更通知
 
-- [ ] **2.3** デバイス情報取得
-  - [ ] `adb shell getprop` でモデル・メーカー取得
-  - [ ] エミュレータ判定ロジック
-  - [ ] 非同期実行（`asyncio.to_thread`）
+- [x] **2.3** デバイス情報取得
+  - [x] `adb shell getprop` でモデル・メーカー取得
+  - [x] エミュレータ判定ロジック
+  - [x] 非同期実行（`asyncio.create_subprocess_exec`）
 
-- [ ] **2.4** REST API 実装
-  - [ ] `GET /api/devices` エンドポイント
-  - [ ] レスポンススキーマ定義（Pydantic）
+- [x] **2.4** REST API 実装
+  - [x] `GET /api/devices` エンドポイント
+  - [x] `GET /api/devices/{serial}` エンドポイント
+  - [x] レスポンスは dataclass.to_dict()
 
-- [ ] **2.5** WebSocket 実装
-  - [ ] `WS /ws/devices` エンドポイント
-  - [ ] 接続管理（ConnectionManager）
-  - [ ] デバイス変更ブロードキャスト
+- [x] **2.5** WebSocket 実装
+  - [x] `WS /ws` エンドポイント
+  - [x] 接続管理（ConnectionManager）
+  - [x] デバイス変更ブロードキャスト
+
+- [x] **2.6** フロントエンド更新
+  - [x] WebSocket リアルタイム接続
+  - [x] デバイス一覧表示UI
 
 ### 完了条件
-- デバイス接続で WebSocket にイベント配信
-- `/api/devices` でデバイス一覧取得
-- ポーリングなし（ログで確認）
+- ✅ デバイス接続で WebSocket にイベント配信
+- ✅ `/api/devices` でデバイス一覧取得
+- ✅ ポーリングなし（イベント駆動）
+
+### 完了日: 2026-01-25
 
 ---
 
