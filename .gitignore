@@ -68,5 +68,10 @@ temp/
 # OS files
 Thumbs.db
 
+# Vendor (downloaded binaries)
+vendor/*.jar
 
-scrcpy/
+# Build outputs for examples
+examples/*/backend/.venv/
+examples/*/frontend/node_modules/
+examples/*/frontend/dist/

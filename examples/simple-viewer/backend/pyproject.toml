@@ -1,0 +1,13 @@
+[project]
+name = "simple-viewer-backend"
+version = "0.1.0"
+description = "Simple Android screen viewer backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "android-screen-stream",
+]
+
+[tool.uv.sources]
+android-screen-stream = { path = "../../packages/android-screen-stream", editable = true }

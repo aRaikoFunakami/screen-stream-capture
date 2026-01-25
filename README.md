@@ -1,106 +1,156 @@
-# Screen Stream Capture
+# screen-stream-capture
 
-複数の Android デバイスの画面を同時に Web ブラウザへ動画配信し、任意の瞬間にサーバー側で JPEG キャプチャを生成できる Web システム。
+Android デバイスの画面をリアルタイムで Web ブラウザにストリーミングするライブラリ
 
 ## 特徴
 
-- **リアルタイム映像配信**: MSE + fMP4/H264 による低遅延ストリーミング
-- **マルチデバイス対応**: 複数デバイスの同時視聴
-- **オンデマンドキャプチャ**: 最新フレームから即座に JPEG 生成
-- **自動デバイス検知**: adb track-devices によるイベント駆動
+- 🚀 **低遅延** H.264 ストリーミング
+- 📱 **複数デバイス** 同時対応
+- 🔧 **設定可能** 解像度・FPS・ビットレート
+- 🐳 **Docker Compose** で簡単起動
+- 📦 **ライブラリ提供** 他プロジェクトへ組み込み可能
+
+## アーキテクチャ
+
+```mermaid
+graph LR
+    subgraph Android
+        SC[scrcpy-server<br/>H.264 Encode]
+    end
+    
+    subgraph Backend["Backend (Python)"]
+        CLIENT[ScrcpyClient<br/>TCP接続]
+        SESSION[StreamSession<br/>マルチキャスト]
+        WS[WebSocket<br/>Server]
+    end
+    
+    subgraph Browser
+        WSC[WebSocket<br/>Client]
+        JMUX[JMuxer<br/>H.264→MSE]
+        VIDEO["&lt;video&gt;<br/>再生"]
+    end
+    
+    SC -->|raw H.264| CLIENT
+    CLIENT --> SESSION --> WS
+    WS -->|binary| WSC --> JMUX --> VIDEO
+```
 
 ## クイックスタート
 
-### 必要条件
+### 前提条件
 
-- Python 3.12+
-- Node.js 20+
-- uv (Python パッケージマネージャー)
-- adb (Android Debug Bridge)
-- scrcpy
-- ffmpeg
+- Docker & Docker Compose
+- Android デバイス（USB接続 or エミュレータ）
+- adb（Android Debug Bridge）
 
 ### セットアップ
 
 ```bash
-# リポジトリのクローン
-git clone <repository-url>
+git clone https://github.com/your/screen-stream-capture.git
 cd screen-stream-capture
 
-# バックエンドのセットアップ
-cd backend
-uv sync
-
-# フロントエンドのセットアップ
-cd ../frontend
-npm install
+# 初期セットアップ（scrcpy-server ダウンロード + Docker ビルド + 起動）
+make setup
 ```
 
-### 起動
+ブラウザで http://localhost:5173 にアクセス
+
+### コマンド一覧
+
+| コマンド | 説明 |
+|---------|------|
+| `make setup` | 初期セットアップ |
+| `make up` | Docker 起動 |
+| `make down` | Docker 終了 |
+| `make rebuild` | 完全再構築 |
+| `make logs` | ログ表示 |
+| `make help` | ヘルプ表示 |
+
+## ライブラリとして使う
+
+### Python (Backend)
 
 ```bash
-# Makefile を使用（推奨）
-make dev
-
-# または個別に起動
-# ターミナル 1: バックエンド
-cd backend && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-# ターミナル 2: フロントエンド
-cd frontend && npm run dev
+# editable install
+uv add --editable /path/to/packages/android-screen-stream
 ```
 
-### アクセス
+```python
+from android_screen_stream import StreamSession, StreamConfig
 
-- フロントエンド: http://localhost:5173
-- バックエンド API: http://localhost:8000
-- API ドキュメント: http://localhost:8000/docs
+session = StreamSession(
+    "emulator-5554",
+    server_jar="vendor/scrcpy-server.jar",
+    config=StreamConfig.balanced(),
+)
+await session.start()
+
+# 購読（複数クライアント対応）
+async for chunk in session.subscribe():
+    await websocket.send_bytes(chunk)
+```
+
+詳細: [packages/android-screen-stream/README.md](packages/android-screen-stream/README.md)
+
+### React (Frontend)
+
+```bash
+npm install /path/to/packages/react-android-screen
+```
+
+```tsx
+import { H264Player } from 'react-android-screen'
+
+<H264Player
+  wsUrl="/api/ws/stream/emulator-5554"
+  className="w-full"
+/>
+```
+
+詳細: [packages/react-android-screen/README.md](packages/react-android-screen/README.md)
+
+## StreamConfig プリセット
+
+| プリセット | 解像度 | FPS | ビットレート |
+|-----------|--------|-----|-------------|
+| `StreamConfig()` | 720p | 30 | 2Mbps |
+| `StreamConfig.low_bandwidth()` | 720p | 15 | 1Mbps |
+| `StreamConfig.balanced()` | 1080p | 30 | 4Mbps |
+| `StreamConfig.high_quality()` | 1080p | 60 | 8Mbps |
 
 ## プロジェクト構成
 
 ```
 screen-stream-capture/
-├── AGENTS.md           # AI エージェント向けガイド
-├── README.md           # 本ファイル
-├── Makefile            # 開発コマンド
-├── backend/            # Python FastAPI バックエンド
-│   ├── main.py         # アプリケーションエントリーポイント
-│   ├── pyproject.toml  # Python 依存関係
-│   └── uv.lock         # 依存関係ロックファイル
-├── frontend/           # React + Vite フロントエンド
-│   ├── src/
-│   │   ├── App.tsx     # メインコンポーネント
-│   │   └── main.tsx    # エントリーポイント
-│   ├── package.json    # npm 依存関係
-│   └── vite.config.ts  # Vite 設定
-└── work/               # 設計書・計画書
-    └── screen_stream_capture/
-        ├── design.md   # 設計書
-        ├── plan.md     # 作業計画
-        └── notes.md    # 調査メモ
+├── packages/
+│   ├── android-screen-stream/     # Python ライブラリ
+│   └── react-android-screen/      # React コンポーネント
+├── examples/
+│   └── simple-viewer/             # 使用例
+├── vendor/                        # scrcpy-server.jar (make setup でダウンロード)
+├── docker-compose.yml
+├── Makefile
+└── README.md
 ```
 
-## API
+## ドキュメント
 
-### REST API
+- [アーキテクチャ詳細](docs/architecture.md)
+- [Python ライブラリ](packages/android-screen-stream/README.md)
+- [React コンポーネント](packages/react-android-screen/README.md)
 
-| エンドポイント | メソッド | 説明 |
-|---------------|----------|------|
-| `/healthz` | GET | ヘルスチェック |
-| `/api/devices` | GET | デバイス一覧 |
-| `/api/devices/{serial}/capture` | POST | 画面キャプチャ |
-| `/api/stream/{serial}` | GET | 映像ストリーム |
+## 技術スタック
 
-### WebSocket
-
-| エンドポイント | 説明 |
-|---------------|------|
-| `/ws/devices` | デバイス状態変更通知 |
-
-## 開発
-
-開発の詳細は [AGENTS.md](./AGENTS.md) を参照してください。
+- **scrcpy-server**: Android 画面キャプチャ & H.264 エンコード
+- **Python / FastAPI**: バックエンド WebSocket サーバー
+- **JMuxer**: ブラウザ内 H.264 → MSE 変換
+- **React / TypeScript**: フロントエンド
 
 ## ライセンス
 
 MIT
+
+### サードパーティライセンス
+
+- [scrcpy](https://github.com/Genymobile/scrcpy) - Apache License 2.0
+- [JMuxer](https://github.com/nicwaller/jmuxer) - MIT License

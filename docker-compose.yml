@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: examples/simple-viewer/backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # editable install のためソースをマウント
+      - ./packages/android-screen-stream:/app/packages/android-screen-stream:ro
+      - ./examples/simple-viewer/backend:/app/backend
+      - ./vendor:/app/vendor:ro
+    environment:
+      - SCRCPY_SERVER_JAR=/app/vendor/scrcpy-server.jar
+      # ホストの adb server を使用
+      - ADB_SERVER_SOCKET=tcp:host.docker.internal:5037
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: .
+      dockerfile: examples/simple-viewer/frontend/Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./packages/react-android-screen:/app/packages/react-android-screen:ro
+      - ./examples/simple-viewer/frontend:/app/frontend
+      - /app/frontend/node_modules  # node_modules はコンテナ内で管理
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
