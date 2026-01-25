@@ -32,21 +32,21 @@
 
 ### TODO
 
-- [ ] **1.1** バックエンドプロジェクト初期化
-  - [ ] `backend/` ディレクトリ作成
-  - [ ] `pyproject.toml` 作成（uv 管理）
-  - [ ] FastAPI, uvicorn 追加
-  - [ ] `.python-version` 設定（3.12+）
+- [x] **1.1** バックエンドプロジェクト初期化
+  - [x] `backend/` ディレクトリ作成
+  - [x] `pyproject.toml` 作成（uv 管理）
+  - [x] FastAPI, uvicorn 追加
+  - [x] `.python-version` 設定（3.12+）
 
-- [ ] **1.2** フロントエンドプロジェクト初期化
-  - [ ] `frontend/` ディレクトリ作成
-  - [ ] Vite + React + TypeScript セットアップ
-  - [ ] TailwindCSS 設定
+- [x] **1.2** フロントエンドプロジェクト初期化
+  - [x] `frontend/` ディレクトリ作成
+  - [x] Vite + React + TypeScript セットアップ
+  - [x] TailwindCSS 設定
 
-- [ ] **1.3** 開発環境設定
-  - [ ] `.gitignore` 作成
-  - [ ] `README.md` 作成（セットアップ手順）
-  - [ ] Makefile 作成（起動コマンド統一）
+- [x] **1.3** 開発環境設定
+  - [x] `.gitignore` 作成
+  - [x] `README.md` 作成（セットアップ手順）
+  - [x] Makefile 作成（起動コマンド統一）
 
 ### 完了条件
 - `uv run python -m uvicorn main:app` でサーバー起動
@@ -314,7 +314,7 @@
 
 | フェーズ | 状態 | 完了日 |
 |---------|------|--------|
-| Phase 1 | ⬜ 未着手 | - |
+| Phase 1 | ✅ 完了 | 2026-01-25 |
 | Phase 2 | ⬜ 未着手 | - |
 | Phase 3 | ⬜ 未着手 | - |
 | Phase 4 | ⬜ 未着手 | - |
