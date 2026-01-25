@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from device_manager import get_device_manager
 from sse_manager import get_sse_manager
+from stream_session import get_stream_manager
 
 # ロギング設定
 logging.basicConfig(
@@ -49,7 +50,9 @@ async def lifespan(app: FastAPI):
     yield
     
     # 終了時
-    logger.info("Stopping DeviceManager...")
+    logger.info("Stopping services...")
+    stream_manager = get_stream_manager()
+    await stream_manager.stop_all()
     await device_manager.stop()
 
 
@@ -116,6 +119,29 @@ async def events():
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/stream/{serial}")
+async def stream_device(serial: str):
+    """デバイス画面のストリーミング（fMP4 形式）"""
+    # デバイスの存在確認
+    device_manager = get_device_manager()
+    device = await device_manager.get_device(serial)
+    if device is None:
+        raise HTTPException(status_code=404, detail=f"Device {serial} not found")
+    
+    # ストリームセッションを取得または作成
+    stream_manager = get_stream_manager()
+    session = await stream_manager.get_or_create(serial)
+    
+    return StreamingResponse(
+        session.subscribe(),
+        media_type="video/mp4",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { VideoPlayer } from './components/VideoPlayer'
 
 interface DeviceInfo {
   serial: string
@@ -14,6 +15,7 @@ function App() {
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [error, setError] = useState<string | null>(null)
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -144,7 +146,12 @@ function App() {
               {devices.map((device) => (
                 <div
                   key={device.serial}
-                  className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => device.state === 'device' && setSelectedDevice(device.serial)}
+                  className={`border rounded-lg p-4 transition-shadow ${
+                    device.state === 'device'
+                      ? 'hover:shadow-md cursor-pointer hover:border-blue-400'
+                      : 'opacity-60 cursor-not-allowed'
+                  }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`w-3 h-3 rounded-full ${getStateColor(device.state)}`} />
@@ -176,6 +183,13 @@ function App() {
           )}
         </div>
       </main>
+
+      {selectedDevice && (
+        <VideoPlayer
+          serial={selectedDevice}
+          onClose={() => setSelectedDevice(null)}
+        />
+      )}
     </div>
   )
 }
