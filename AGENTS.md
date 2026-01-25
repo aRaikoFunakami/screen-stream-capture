@@ -10,11 +10,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| **プロジェクト名** | `{PROJECT_NAME}` |
-| **主要言語** | `{LANGUAGES}` |
-| **フレームワーク** | `{FRAMEWORKS}` |
-| **パッケージマネージャー** | `{PACKAGE_MANAGER}` |
-| **テストフレームワーク** | `{TEST_FRAMEWORK}` |
+| **プロジェクト名** | screen-stream-capture |
+| **主要言語** | Python, TypeScript |
+| **フレームワーク** | FastAPI, React |
+| **パッケージマネージャー** | uv (Python), npm (Node.js) |
+| **テストフレームワーク** | pytest, Jest |
 
 ---
 
@@ -25,8 +25,8 @@
 | ドキュメント | 確認するタイミング |
 |-------------|-------------------|
 | **[README.md](./README.md)** | プロジェクト全体の把握、セットアップ方法 |
-| **[CONTRIBUTING.md](./CONTRIBUTING.md)** | コントリビューションガイドライン |
-| **[docs/](./docs/)** | 詳細なドキュメント（存在する場合） |
+| **[docs/architecture.md](./docs/architecture.md)** | アーキテクチャ詳細 |
+| **[docs/api-reference.md](./docs/api-reference.md)** | API リファレンス |
 
 **重要**: 一般的なフレームワークの知識だけで推測して作業しないこと。プロジェクト固有のルールや設定を必ず確認してください。
 
@@ -36,14 +36,31 @@
 
 ### 説明
 
-`{PROJECT_DESCRIPTION}`
+Android デバイスの画面を Web ブラウザにリアルタイムでストリーミングするライブラリ。scrcpy-server を活用し、H.264 ビデオストリームを WebSocket 経由でブラウザに送信、JMuxer でデコードして表示します。
 
 ### アーキテクチャ
 
-> **注意**: アーキテクチャ図は Mermaid 形式で記述すること。ASCII アートは使用しない。
-
 ```mermaid
-{ARCHITECTURE_DIAGRAM_MERMAID}
+graph LR
+    subgraph Android
+        SC[scrcpy-server<br/>H.264 Encode]
+    end
+    
+    subgraph Backend["Backend (Python)"]
+        CLIENT[ScrcpyClient<br/>TCP接続]
+        SESSION[StreamSession<br/>マルチキャスト]
+        WS[WebSocket<br/>Server]
+    end
+    
+    subgraph Browser
+        WSC[WebSocket<br/>Client]
+        JMUX[JMuxer<br/>H.264→MSE]
+        VIDEO["&lt;video&gt;<br/>再生"]
+    end
+    
+    SC -->|raw H.264| CLIENT
+    CLIENT --> SESSION --> WS
+    WS -->|binary| WSC --> JMUX --> VIDEO
 ```
 
 ---
@@ -51,14 +68,37 @@
 ## ディレクトリ構造
 
 ```
-project-root/
-├── AGENTS.md                # 本ファイル（AI向けガイド）
-├── README.md                # プロジェクト概要
-├── src/                     # ソースコード
-├── work/                    # 一時的な設計書・計画書
-├── tests/                   # テストコード
-├── docs/                    # ドキュメント
-└── config/                  # 設定ファイル
+screen-stream-capture/
+├── AGENTS.md                      # 本ファイル（AI向けガイド）
+├── README.md                      # プロジェクト概要
+├── Makefile                       # ビルド・起動コマンド
+├── docker-compose.yml             # Docker Compose 設定
+├── packages/
+│   ├── android-screen-stream/     # Python ライブラリ
+│   │   ├── pyproject.toml
+│   │   ├── README.md
+│   │   └── src/android_screen_stream/
+│   │       ├── __init__.py
+│   │       ├── config.py          # StreamConfig
+│   │       ├── client.py          # ScrcpyClient
+│   │       └── session.py         # StreamSession, StreamManager
+│   └── react-android-screen/      # React コンポーネント
+│       ├── package.json
+│       ├── README.md
+│       └── src/
+│           ├── index.ts
+│           ├── H264Player.tsx
+│           ├── useAndroidStream.ts
+│           └── types.ts
+├── examples/
+│   └── simple-viewer/             # 使用例
+│       ├── backend/
+│       └── frontend/
+├── vendor/                        # scrcpy-server.jar（make setup でダウンロード）
+├── docs/                          # ドキュメント
+│   ├── architecture.md
+│   └── api-reference.md
+└── work/                          # 一時的な設計書・計画書
 ```
 
 ---
@@ -68,32 +108,37 @@ project-root/
 ### セットアップ
 
 ```bash
-# 依存関係のインストール
-{INSTALL_COMMAND}
+# 初期セットアップ（scrcpy-server ダウンロード + Docker ビルド + 起動）
+make setup
 
-# 開発サーバーの起動
-{DEV_COMMAND}
+# Docker 起動
+make up
 
-# テストの実行
-{TEST_COMMAND}
+# Docker 終了
+make down
+
+# 完全再構築
+make rebuild
 ```
 
 ### 依存関係管理
 
 ```bash
-# パッケージの追加
-{ADD_PACKAGE_COMMAND}
+# Python パッケージの追加（android-screen-stream）
+cd packages/android-screen-stream
+uv add <package-name>
 
-# 開発用パッケージの追加
-{ADD_DEV_PACKAGE_COMMAND}
+# NPM パッケージの追加（react-android-screen）
+cd packages/react-android-screen
+npm install <package-name>
 ```
 
 ### Python 依存関係管理（uv 必須）
 
-Python の依存関係管理には **必ず uv を使用すること**。pip や poetry ではなく uv を使うことで、どの環境でも再現可能な依存関係を保証する。
+Python の依存関係管理には **必ず uv を使用すること**。
 
 ```bash
-# ライブラリの追加（必ず uv add を使用）
+# ライブラリの追加
 uv add <package-name>
 
 # 開発用ライブラリの追加
@@ -115,12 +160,6 @@ uv run pytest tests/ -v
 - `requirements.txt` を手動で編集しない
 - `pyproject.toml` の dependencies を手動で編集しない（uv add が自動管理）
 
-#### uv を使う理由
-
-1. **再現性**: `uv.lock` により全環境で同一のパッケージバージョンを保証
-2. **高速**: pip より 10-100 倍高速なインストール
-3. **一貫性**: Python バージョンと依存関係を一元管理
-
 ---
 
 ## コーディング規約
@@ -132,56 +171,57 @@ uv run pytest tests/ -v
 - **テスト**: 新機能や修正には必ずテストを追加する
 - **コミット**: 1 つの論理的な変更につき 1 コミット
 - **非同期処理**: async/await を活用し、ブロッキング処理を避ける
-- **王道の設計**: 奇をてらわず、標準的・王道のデザインパターンと設計手法を採用する
-- **既存ライブラリの活用**: 車輪の再発明を避け、実績のあるライブラリを積極的に利用する
 - **図表の記述**: アーキテクチャ図やフロー図は Mermaid 形式で記述する（ASCII アートは使用しない）
 
 ### 命名規則
 
 | 種類 | 規則 | 例 |
 |------|------|-----|
-| 変数・関数 | camelCase または snake_case | `getUserData`, `get_user_data` |
-| クラス | PascalCase | `UserManager` |
+| 変数・関数 | snake_case (Python) / camelCase (TS) | `get_user_data`, `getUserData` |
+| クラス | PascalCase | `StreamSession` |
 | 定数 | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT` |
-| ファイル | kebab-case または snake_case | `user-manager.ts`, `user_manager.py` |
+| ファイル | snake_case (Python) / kebab-case (TS) | `stream_session.py`, `H264Player.tsx` |
 
-### コードスタイル
-
-```typescript
-// TypeScript の例
-
-// 型を明示的に定義
-interface UserData {
-  id: string;
-  name: string;
-  email: string;
-}
-
-// 関数には引数と戻り値の型を指定
-function getUser(id: string): Promise<UserData> {
-  // ...
-}
-
-// コンポーネントはアロー関数で定義
-const UserCard: React.FC<Props> = ({ user }) => {
-  // ...
-};
-```
+### Python コードスタイル
 
 ```python
-# Python の例
+from android_screen_stream import StreamSession, StreamConfig
 
 # 型ヒントを使用
-def get_user(user_id: str) -> dict:
-    """ユーザー情報を取得する
+async def start_stream(serial: str, config: StreamConfig | None = None) -> StreamSession:
+    """ストリーミングセッションを開始する
 
     Args:
-        user_id: ユーザーID
+        serial: Android デバイスのシリアル番号
+        config: ストリーミング設定（省略時はデフォルト）
 
     Returns:
-        ユーザー情報の辞書
+        開始されたストリーミングセッション
     """
-    ...
+    session = StreamSession(serial, server_jar="vendor/scrcpy-server.jar", config=config)
+    await session.start()
+    return session
+```
+
+### TypeScript コードスタイル
+
+```tsx
+import { H264Player } from 'react-android-screen'
+
+interface StreamViewerProps {
+  serial: string
+  className?: string
+}
+
+const StreamViewer: React.FC<StreamViewerProps> = ({ serial, className }) => {
+  return (
+    <H264Player
+      wsUrl={`/api/ws/stream/${serial}`}
+      className={className}
+      onConnected={() => console.log('connected')}
+    />
+  )
+}
 ```
 
 ---
@@ -191,58 +231,37 @@ def get_user(user_id: str) -> dict:
 以下の行為は **禁止** です：
 
 1. **テストなしでコードを変更しない**
-   - 新機能や修正には必ずテストを追加
-
 2. **ドキュメントを更新せずに API を変更しない**
-   - API の変更時は関連ドキュメントも更新
-
-3. **ハードコードされた値を使用しない**
-   - 環境変数または設定ファイルを使用
-
-4. **プラットフォーム固有のコードを書かない**
-   - 必要な場合は適切に抽象化する
-
-5. **計画せずに大規模な変更を始めない**
-   - 大規模なリファクタリングは計画書を作成してから実行
+3. **ハードコードされた値を使用しない**（環境変数または設定ファイルを使用）
+4. **計画せずに大規模な変更を始めない**（`work/` に計画書を作成してから実行）
 
 ---
 
-## ⚠️ ターミナル・サーバー管理の注意事項（重要）
+## ⚠️ Docker 環境での注意事項
 
-### 問題点
+### adb サーバーへのアクセス
 
-AI エージェントがサーバーを起動しても、以下の理由で頻繁に停止してしまう：
+Docker コンテナから adb サーバーにアクセスするには、ホストの adb サーバーを使用します：
 
-1. **`&` でバックグラウンド実行しても不十分**
-   - 同じターミナルで別コマンドを実行すると、シグナル（SIGINT等）がバックグラウンドプロセスにも伝播する
-   - ターミナルセッションが閉じるとプロセスも終了する
-
-2. **`isBackground=true` の制限**
-   - VS Code のターミナルセッション内で実行されるため、ターミナルが閉じると終了する
-
-### 解決策
-
-#### 方法1: `nohup` を使用（推奨）
-
-```bash
-nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+```yaml
+# docker-compose.yml
+environment:
+  - ADB_SERVER_SOCKET=tcp:host.docker.internal:5037
+extra_hosts:
+  - "host.docker.internal:host-gateway"
 ```
 
-#### 方法2: 別ターミナルタブで実行
+**前提条件**: ホストで `adb start-server` が実行されていること。
 
-サーバーは専用のターミナルタブで実行し、そのタブでは他のコマンドを実行しない。
+### ボリュームマウント
 
-#### 方法3: ユーザーに起動を依頼
+editable install のため、ソースコードをマウントしています：
 
-長時間実行が必要なサーバーは、コマンドを提示してユーザー自身に起動してもらう。
-
-### ルール
-
-1. **サーバー起動後は同じターミナルで他のコマンドを実行しない**
-2. **サーバーが落ちたら原因を調査してから再起動する**
-3. **頻繁にサーバーを起動・停止しない**（必要な場合のみ）
-4. **サーバーの状態確認には `lsof -i :<port>` を使用する**
-5. **作業開始時は必ず `scripts/ensure-servers.sh` を実行してサーバー状態を確認する**
+```yaml
+volumes:
+  - ./packages/android-screen-stream:/app/packages/android-screen-stream:ro
+  - ./vendor:/app/vendor:ro
+```
 
 ---
 
@@ -255,7 +274,7 @@ nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
    └─ 何を実装するか明確にする
 
 2. 関連コードを調査
-   └─ 既存の実装パターンを理解
+   └─ packages/ 内のライブラリ構造を理解
 
 3. 実装
    └─ 既存のコードスタイルに従う
@@ -270,7 +289,7 @@ nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
 ### 大規模な変更のワークフロー
 
 1. **計画書を作成**
-   - `work/{feature_name}/plan.md` に計画を記述
+   - `work/<feature_name>/plan.md` に計画を記述
    - 目的、変更範囲、リスクを明記
 
 2. **ユーザーの承認を得る**
@@ -290,21 +309,14 @@ nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
 ### テストの実行
 
 ```bash
-# 全テスト実行
-{TEST_ALL_COMMAND}
+# Python テスト
+cd packages/android-screen-stream
+uv run pytest tests/ -v
 
-# 特定のテストファイル
-{TEST_FILE_COMMAND}
-
-# カバレッジレポート
-{TEST_COVERAGE_COMMAND}
+# TypeScript テスト
+cd packages/react-android-screen
+npm test
 ```
-
-### テストの書き方
-
-- **ユニットテスト**: 単一の関数/クラスをテスト
-- **インテグレーションテスト**: コンポーネント間の連携をテスト
-- **E2E テスト**: ユーザーシナリオ全体をテスト
 
 ---
 
@@ -314,69 +326,16 @@ nohup uv run uvicorn main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
 
 | 症状 | 原因 | 対処 |
 |------|------|------|
-| 依存関係エラー | パッケージの不整合 | `{CLEAN_INSTALL_COMMAND}` |
-| ビルドエラー | キャッシュの問題 | `{CLEAN_BUILD_COMMAND}` |
-| テスト失敗 | 環境の差異 | 環境変数を確認 |
+| adb が接続できない | adb サーバー未起動 | `adb start-server` を実行 |
+| Docker ビルドエラー | キャッシュの問題 | `make rebuild` |
+| ストリームが表示されない | デバイス未接続 | `adb devices` で確認 |
+| scrcpy-server.jar がない | ダウンロード未実行 | `make setup` |
 
 ### デバッグ手順
 
-1. **エラーメッセージを確認**
-   - スタックトレースを読む
-   - 関連するコードを特定
-
-2. **最小再現手順を作成**
-   - 問題を再現する最小限のコードを作成
-
-3. **ログを追加**
-   - 問題箇所の前後にログを追加
-   - 変数の状態を確認
-
----
-
-## 🔧 リファクタリング・新機能開発のワークフロー
-
-大規模なリファクタリングや新機能開発を行う際は、以下のワークフローに従ってください。
-
-### 1. 一時作業ディレクトリの作成
-
-```bash
-mkdir -p work/<feature_name>/
-```
-
-例: `work/dialog_mode_refactoring/`
-
-### 2. 設計書・計画書の作成
-
-`work/<feature_name>_<作成日時>/` に以下を作成:
-- `design.md` - 設計書（目的、アーキテクチャ、変更点）
-- `plan.md` - 作業計画（フェーズ分割、TODO管理）
-- `notes.md` - 調査メモ、気づき等
-
-### 3. 実装を進めながら進捗を更新
-
-計画書のTODOを更新しながら実装を進める。
-
-### 4. 完了後の整理
-
-1. **最終成果物の説明書を `docs/` に作成**
-   - 実装した機能の使い方
-   - API リファレンス
-   - 例: `docs/analysis_agents.md`
-
-2. **一時作業ディレクトリを削除扱いにする**
-   ```bash
-   mv work/<feature_name>_<作成日時> work/<feature_name>_<作成日時>_<終了日時>/
-   ```
-
-### ディレクトリの使い分け
-
-| ディレクトリ | 目的 | Git管理 |
-|-------------|------|---------|
-| `work/` | 設計書・計画書・進捗管理 | 含む（変更追跡のため） |
-| `docs/` | 最終成果物の説明書 | 含む |
-
-**注意**: `work/` 内のファイルも Git で管理します。LLM が計画の変更履歴を追跡し、セッション間で継続的に開発を進めるためです。
-完成した機能のドキュメントは `docs/` にも残してください。
+1. **ログを確認**: `make logs`
+2. **adb 接続確認**: `adb devices`
+3. **ポート確認**: `lsof -i :8000` / `lsof -i :5173`
 
 ---
 
@@ -384,9 +343,8 @@ mkdir -p work/<feature_name>/
 
 | 変数名 | 説明 | デフォルト値 |
 |--------|------|-------------|
-| `NODE_ENV` | 実行環境 | `development` |
-| `DEBUG` | デバッグモード | `false` |
-| `API_URL` | API エンドポイント | `http://localhost:3000` |
+| `SCRCPY_SERVER_JAR` | scrcpy-server.jar のパス | `vendor/scrcpy-server.jar` |
+| `ADB_SERVER_SOCKET` | adb サーバーのソケット | - |
 
 ---
 
@@ -395,30 +353,17 @@ mkdir -p work/<feature_name>/
 ### プロジェクト内ドキュメント
 
 - [README.md](./README.md) - プロジェクト概要
-- [CONTRIBUTING.md](./CONTRIBUTING.md) - コントリビューションガイド
+- [docs/architecture.md](./docs/architecture.md) - アーキテクチャ詳細
+- [docs/api-reference.md](./docs/api-reference.md) - API リファレンス
+- [packages/android-screen-stream/README.md](./packages/android-screen-stream/README.md) - Python ライブラリ
+- [packages/react-android-screen/README.md](./packages/react-android-screen/README.md) - React コンポーネント
 
 ### 外部ドキュメント
 
-- `{EXTERNAL_DOCS_LINKS}`
-
----
-
-## カスタムセクション
-
-> **Note**: このセクションにはプロジェクト固有のガイドラインを追加してください。
-
-### 例: 状態管理アーキテクチャ
-
-```
-{STATE_MANAGEMENT_DIAGRAM}
-```
-
-### 例: API 変更時のチェックリスト
-
-- [ ] API 仕様書を更新した
-- [ ] テストを追加した
-- [ ] クライアントコードを更新した
-- [ ] 変更履歴を記録した
+- [scrcpy](https://github.com/Genymobile/scrcpy) - Android 画面ミラーリング
+- [JMuxer](https://github.com/nicwaller/jmuxer) - H.264 → MSE 変換
+- [FastAPI](https://fastapi.tiangolo.com/) - Python Web フレームワーク
+- [uv](https://docs.astral.sh/uv/) - Python パッケージマネージャー
 
 ---
 
@@ -426,35 +371,4 @@ mkdir -p work/<feature_name>/
 
 | 日付 | 変更内容 |
 |------|----------|
-| `{DATE}` | 初版作成 |
-
----
-
-## 使い方
-
-このテンプレートを使用する際は、以下のプレースホルダーをプロジェクトに合わせて置き換えてください：
-
-| プレースホルダー | 説明 |
-|-----------------|------|
-| `{PROJECT_NAME}` | プロジェクト名 |
-| `{LANGUAGES}` | 使用言語（TypeScript, Python など） |
-| `{FRAMEWORKS}` | フレームワーク（React, FastAPI など） |
-| `{PACKAGE_MANAGER}` | パッケージマネージャー（npm, uv, pip など） |
-| `{TEST_FRAMEWORK}` | テストフレームワーク（Jest, pytest など） |
-| `{PROJECT_DESCRIPTION}` | プロジェクトの説明 |
-| `{ARCHITECTURE_DIAGRAM}` | アーキテクチャ図（ASCII アート） |
-| `{INSTALL_COMMAND}` | インストールコマンド |
-| `{DEV_COMMAND}` | 開発サーバー起動コマンド |
-| `{TEST_COMMAND}` | テスト実行コマンド |
-| `{ADD_PACKAGE_COMMAND}` | パッケージ追加コマンド |
-| `{ADD_DEV_PACKAGE_COMMAND}` | 開発用パッケージ追加コマンド |
-| `{TEST_ALL_COMMAND}` | 全テスト実行コマンド |
-| `{TEST_FILE_COMMAND}` | 特定ファイルのテストコマンド |
-| `{TEST_COVERAGE_COMMAND}` | カバレッジレポートコマンド |
-| `{CLEAN_INSTALL_COMMAND}` | クリーンインストールコマンド |
-| `{CLEAN_BUILD_COMMAND}` | クリーンビルドコマンド |
-| `{EXTERNAL_DOCS_LINKS}` | 外部ドキュメントリンク |
-| `{STATE_MANAGEMENT_DIAGRAM}` | 状態管理図 |
-| `{DATE}` | 日付 |
-
-不要なセクションは削除し、プロジェクトに必要なセクションを追加してください。
+| 2026-01-25 | ライブラリ化に伴い全面改訂 |

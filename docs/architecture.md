@@ -2,7 +2,7 @@
 
 ## 概要
 
-Screen Stream Captureは、Androidデバイスの画面をWebブラウザにリアルタイムでストリーミングするシステムです。scrcpy-serverを活用し、H.264ビデオストリームをWebSocket経由でブラウザに送信、JMuxerでデコードして表示します。
+screen-stream-capture は、Android デバイスの画面を Web ブラウザにリアルタイムでストリーミングするライブラリです。scrcpy-server を活用し、H.264 ビデオストリームを WebSocket 経由でブラウザに送信、JMuxer でデコードして表示します。
 
 ---
 
@@ -19,8 +19,8 @@ graph TB
 
     subgraph Host["Host Machine - Backend"]
         ADB[adb forward<br/>tcp:PORT]
-        CLIENT[ScrcpyRawClient<br/>TCP接続]
-        SESSION[H264StreamSession<br/>マルチキャスト]
+        CLIENT[ScrcpyClient<br/>TCP接続]
+        SESSION[StreamSession<br/>マルチキャスト]
         WS[WebSocket Server<br/>/api/ws/stream/serial]
         ADB --> CLIENT --> SESSION --> WS
     end
@@ -43,29 +43,42 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant Android as Android<br/>Screen
-    participant Backend as Backend<br/>Server
-    participant WS as WebSocket<br/>Transfer
-    participant Browser as Browser<br/>Player
-
-    Android->>Backend: Screen Capture (MediaProjection)
-    Android->>Backend: H.264 Encode (MediaCodec)
-    Android->>Backend: raw H.264 stream via TCP socket
+    participant App as アプリケーション
+    participant Session as StreamSession
+    participant Client as ScrcpyClient
+    participant ADB as adb
+    participant Server as scrcpy-server
+    participant Device as Android Device
     
-    Backend->>WS: Broadcast to all subscribers
-    WS->>Browser: WebSocket binary message
+    App->>Session: StreamSession(serial, config)
+    App->>Session: await start()
+    Session->>Client: ScrcpyClient(serial, config)
+    Session->>Client: await start()
+    Client->>ADB: push scrcpy-server.jar
+    Client->>ADB: shell app_process (raw_stream=true)
+    Client->>ADB: forward tcp:PORT localabstract:scrcpy
+    Client->>Server: TCP connect
     
-    Note over Browser: JMuxer decode
-    Note over Browser: MSE playback
+    loop ストリーミング
+        Device->>Server: Screen Capture
+        Server->>Server: H.264 Encode
+        Server->>Client: raw H.264 chunks
+        Client->>Session: broadcast to subscribers
+        Session->>App: queue.get()
+    end
+    
+    App->>Session: await stop()
+    Session->>Client: await stop()
+    Client->>Server: disconnect
 ```
 
 ---
 
 ## コンポーネント詳細
 
-### 1. scrcpy-server（Androidデバイス上）
+### 1. scrcpy-server（Android デバイス上）
 
-scrcpy-serverはAndroidデバイス上で動作するJavaアプリケーションで、画面をキャプチャしてH.264にエンコードします。
+scrcpy-server は Android デバイス上で動作する Java アプリケーションで、画面をキャプチャして H.264 にエンコードします。
 
 **起動コマンド:**
 ```bash
@@ -82,153 +95,140 @@ adb shell CLASSPATH=/data/local/tmp/scrcpy-server.jar \
 **主要オプション:**
 | オプション | 説明 |
 |-----------|------|
-| `tunnel_forward=true` | adb forwardを使用してTCP接続 |
-| `raw_stream=true` | メタデータなしの純粋なH.264出力 |
+| `tunnel_forward=true` | adb forward を使用して TCP 接続 |
+| `raw_stream=true` | メタデータなしの純粋な H.264 出力 |
 | `max_size=720` | 最大解像度（幅または高さ） |
 | `max_fps=30` | 最大フレームレート |
 | `audio=false` | 音声無効 |
 | `control=false` | リモート操作無効 |
 
-### 2. ScrcpyRawClient（バックエンド）
+### 2. ScrcpyClient（Python ライブラリ）
 
-scrcpy-serverに直接TCP接続してraw H.264ストリームを取得するPythonクライアント。
+scrcpy-server に直接 TCP 接続して raw H.264 ストリームを取得する Python クライアント。
 
-**ファイル:** [backend/scrcpy_client.py](../backend/scrcpy_client.py)
+**パッケージ:** `packages/android-screen-stream`
 
 ```python
-class ScrcpyRawClient:
-    """scrcpy-serverに直接接続してraw H.264ストリームを取得"""
-    
-    async def start(self) -> None:
-        """サーバー起動 → adb forward設定 → TCP接続"""
-        await self._push_server()      # jarをデバイスにプッシュ
-        await self._setup_tunnel()     # adb forward設定
-        await self._start_server()     # scrcpy-server起動
-        await self._connect()          # TCP接続
-    
-    async def stream(self) -> AsyncIterator[bytes]:
-        """raw H.264チャンクを非同期で読み取り"""
-        while self._running:
-            chunk = await self._reader.read(65536)
-            yield chunk
+from android_screen_stream import ScrcpyClient, StreamConfig
+
+async with ScrcpyClient(
+    serial="emulator-5554",
+    server_jar="vendor/scrcpy-server.jar",
+    config=StreamConfig.balanced(),
+) as client:
+    async for chunk in client.stream():
+        process(chunk)
 ```
 
 **接続フロー:**
 ```
-1. adb forward tcp:PORT localabstract:scrcpy
-2. adb shell ... scrcpy-server ...
-3. asyncio.open_connection("localhost", PORT)
-4. async for chunk in reader: yield chunk
+1. adb push scrcpy-server.jar /data/local/tmp/
+2. adb forward tcp:PORT localabstract:scrcpy
+3. adb shell ... scrcpy-server ...
+4. asyncio.open_connection("localhost", PORT)
+5. async for chunk in reader: yield chunk
 ```
 
-### 3. H264StreamSession（バックエンド）
+### 3. StreamSession（Python ライブラリ）
 
-デバイスごとのストリーミングセッションを管理し、複数のWebSocketクライアントにマルチキャスト。
-
-**ファイル:** [backend/h264_stream_session.py](../backend/h264_stream_session.py)
+デバイスごとのストリーミングセッションを管理し、複数の WebSocket クライアントにマルチキャスト。
 
 ```python
-class H264StreamSession:
-    """デバイスごとのH.264ストリーミングセッション"""
-    
-    def __init__(self, serial: str):
-        self._client: ScrcpyRawClient  # scrcpyクライアント
-        self._subscribers: list[Queue] # 購読者のキュー
-    
-    async def subscribe(self) -> AsyncIterator[bytes]:
-        """新規購読者としてストリームを受信"""
-        queue = Queue()
-        self._subscribers.append(queue)
-        while True:
-            chunk = await queue.get()
-            yield chunk
-    
-    async def _run_broadcast(self):
-        """全購読者にH.264データをブロードキャスト"""
-        async for chunk in self._client.stream():
-            for queue in self._subscribers:
-                queue.put_nowait(chunk)
+from android_screen_stream import StreamSession, StreamConfig
+
+session = StreamSession(
+    serial="emulator-5554",
+    server_jar="vendor/scrcpy-server.jar",
+    config=StreamConfig.balanced(),
+)
+await session.start()
+
+# 購読（複数クライアント対応）
+async for chunk in session.subscribe():
+    await websocket.send_bytes(chunk)
+
+# 設定の動的変更
+await session.update_config(StreamConfig.high_quality())
 ```
 
-### 4. WebSocketエンドポイント（バックエンド）
+### 4. StreamManager（Python ライブラリ）
 
-**ファイル:** [backend/main.py](../backend/main.py)
+複数デバイスのセッション管理。
 
 ```python
-@app.websocket("/api/ws/stream/{serial}")
-async def websocket_stream(websocket: WebSocket, serial: str):
-    """WebSocket経由でraw H.264ストリームを送信"""
-    await websocket.accept()
-    
-    session = await h264_manager.get_or_create(serial)
-    
-    async for chunk in session.subscribe():
-        await websocket.send_bytes(chunk)
+from android_screen_stream import StreamManager, StreamConfig
+
+manager = StreamManager(
+    server_jar="vendor/scrcpy-server.jar",
+    default_config=StreamConfig.balanced(),
+)
+
+# セッションを取得または作成
+session = await manager.get_or_create("emulator-5554")
 ```
 
-### 5. H264Player（フロントエンド）
+### 5. H264Player（React コンポーネント）
 
-JMuxerを使用してH.264ストリームをブラウザで再生するReactコンポーネント。
+JMuxer を使用して H.264 ストリームをブラウザで再生する React コンポーネント。
 
-**ファイル:** [frontend/src/components/H264Player.tsx](../frontend/src/components/H264Player.tsx)
+**パッケージ:** `packages/react-android-screen`
 
-```typescript
-function H264Player({ serial }: { serial: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const jmuxerRef = useRef<JMuxer>(null)
-  
-  useEffect(() => {
-    // JMuxer初期化
-    const jmuxer = new JMuxer({
-      node: videoRef.current,
-      mode: 'video',
-      fps: 30,
-    })
-    
-    // WebSocket接続
-    const ws = new WebSocket(`ws://${host}/api/ws/stream/${serial}`)
-    ws.binaryType = 'arraybuffer'
-    
-    ws.onmessage = (event) => {
-      // H.264データをJMuxerに送信
-      jmuxer.feed({ video: new Uint8Array(event.data) })
-    }
-  }, [serial])
-  
-  return <video ref={videoRef} autoPlay muted />
-}
+```tsx
+import { H264Player } from 'react-android-screen'
+
+<H264Player
+  wsUrl="/api/ws/stream/emulator-5554"
+  className="w-full max-w-2xl"
+  onConnected={() => console.log('connected')}
+  onError={(error) => console.error(error)}
+/>
+```
+
+### 6. useAndroidStream（React フック）
+
+カスタム UI を構築するための低レベルフック。
+
+```tsx
+import { useAndroidStream } from 'react-android-screen'
+
+const { videoRef, status, stats, connect, disconnect } = useAndroidStream({
+  wsUrl: '/api/ws/stream/emulator-5554',
+  autoConnect: true,
+})
+
+return <video ref={videoRef} autoPlay muted />
 ```
 
 ---
 
 ## 技術選定の理由
 
-### なぜFFmpegによるfMP4変換を採用しなかったか
+### なぜ FFmpeg による fMP4 変換を採用しなかったか
 
-当初はFFmpegでH.264→fMP4変換を検討しましたが、以下の問題により断念：
+当初は FFmpeg で H.264→fMP4 変換を検討しましたが、以下の問題により断念：
 
 1. **キーフレーム依存の遅延**
-   - `frag_keyframe`オプションはキーフレームごとにのみフラグメントを出力
-   - scrcpy-serverのキーフレーム間隔が長い（10秒以上）
+   - `frag_keyframe` オプションはキーフレームごとにのみフラグメントを出力
+   - scrcpy-server のキーフレーム間隔が長い（10秒以上）
    - リアルタイムストリーミングには不適
 
 2. **バッファリングの問題**
-   - FFmpegのH.264パーサーは入力のバッファリングが必要
+   - FFmpeg の H.264 パーサーは入力のバッファリングが必要
    - 最初のフラグメント出力まで数秒の遅延
 
-### なぜJMuxerを採用したか
+### なぜ JMuxer を採用したか
 
 1. **クライアントサイド変換**
    - サーバー負荷なし
    - 変換遅延が最小限
 
-2. **H.264直接対応**
-   - raw H.264（Annex B形式）を直接デコード
-   - fMP4への変換をブラウザ側で実行
+2. **H.264 直接対応**
+   - raw H.264（Annex B 形式）を直接デコード
+   - fMP4 への変換をブラウザ側で実行
 
-3. **Media Source Extensions (MSE)対応**
-   - 標準的なブラウザAPIを使用
-   - `<video>`要素での再生が可能
+3. **Media Source Extensions (MSE) 対応**
+   - 標準的なブラウザ API を使用
+   - `<video>` 要素での再生が可能
 
 ---
 
@@ -244,64 +244,118 @@ function H264Player({ serial }: { serial: string }) {
 | 遅延 | <500ms |
 | データ転送量 | ~600 KB / 10秒 |
 
-### 最適化ポイント
+### StreamConfig プリセット
 
-1. **チャンクサイズ**: 65536バイトで効率的な転送
-2. **キューサイズ**: 100チャンクで遅延クライアント対応
-3. **自動停止**: 購読者がいなくなると5秒後にセッション終了
+| プリセット | 解像度 | FPS | ビットレート |
+|-----------|--------|-----|-------------|
+| `StreamConfig()` | 720p | 30 | 2Mbps |
+| `StreamConfig.low_bandwidth()` | 720p | 15 | 1Mbps |
+| `StreamConfig.balanced()` | 1080p | 30 | 4Mbps |
+| `StreamConfig.high_quality()` | 1080p | 60 | 8Mbps |
 
 ---
 
-## ファイル構成
+## プロジェクト構成
 
 ```
-backend/
-├── main.py                 # FastAPIアプリケーション、WebSocketエンドポイント
-├── scrcpy_client.py        # scrcpy-server接続クライアント
-├── h264_stream_session.py  # ストリームセッション管理
-├── device_manager.py       # デバイス検出・管理
-├── device_monitor.py       # adb track-devices監視
-└── sse_manager.py          # SSEブロードキャスト
+screen-stream-capture/
+├── packages/
+│   ├── android-screen-stream/     # Python ライブラリ
+│   │   ├── pyproject.toml
+│   │   ├── README.md
+│   │   └── src/
+│   │       └── android_screen_stream/
+│   │           ├── __init__.py
+│   │           ├── config.py      # StreamConfig
+│   │           ├── client.py      # ScrcpyClient
+│   │           └── session.py     # StreamSession, StreamManager
+│   │
+│   └── react-android-screen/      # React コンポーネント
+│       ├── package.json
+│       ├── README.md
+│       └── src/
+│           ├── index.ts
+│           ├── H264Player.tsx
+│           ├── useAndroidStream.ts
+│           └── types.ts
+│
+├── examples/
+│   └── simple-viewer/             # 使用例
+│       ├── backend/
+│       │   ├── Dockerfile
+│       │   ├── pyproject.toml
+│       │   └── main.py
+│       └── frontend/
+│           ├── Dockerfile
+│           ├── package.json
+│           └── src/App.tsx
+│
+├── vendor/                        # 外部依存（make setup でダウンロード）
+│   └── scrcpy-server.jar
+│
+├── docker-compose.yml
+├── Makefile
+├── docs/
+│   ├── architecture.md            # 本ドキュメント
+│   └── api-reference.md           # API リファレンス
+└── README.md
+```
 
-frontend/
-├── src/
-│   ├── App.tsx             # メインアプリケーション
-│   └── components/
-│       ├── H264Player.tsx  # JMuxerベースのプレイヤー
-│       └── VideoPlayer.tsx # 旧fMP4プレイヤー（未使用）
-└── package.json            # jmuxer依存関係
+---
 
-scrcpy/
-└── scrcpy-server-v3.3.4    # scrcpy-serverのJARファイル
+## Docker 構成
+
+```mermaid
+flowchart TB
+    subgraph Docker["Docker Compose"]
+        BACKEND[backend<br/>Python/FastAPI<br/>:8000]
+        FRONTEND[frontend<br/>Vite/React<br/>:5173]
+    end
+    
+    subgraph Host
+        ADB[adb server<br/>:5037]
+        VENDOR[vendor/<br/>scrcpy-server.jar]
+        PACKAGES[packages/<br/>libraries]
+    end
+    
+    FRONTEND -->|proxy /api| BACKEND
+    BACKEND -->|host.docker.internal:5037| ADB
+    BACKEND -.->|volume mount| VENDOR
+    BACKEND -.->|volume mount| PACKAGES
 ```
 
 ---
 
 ## 起動方法
 
-### バックエンド
+### Docker Compose（推奨）
+
 ```bash
-cd backend
+# 初期セットアップ
+make setup
+
+# アクセス
+# http://localhost:5173/
+```
+
+### ローカル開発
+
+```bash
+# バックエンド
+cd examples/simple-viewer/backend
 uv run uvicorn main:app --host 0.0.0.0 --port 8000
-```
 
-### フロントエンド
-```bash
-cd frontend
+# フロントエンド
+cd examples/simple-viewer/frontend
 npm run dev
-```
-
-### アクセス
-```
-http://localhost:5173/
 ```
 
 ---
 
 ## 今後の拡張可能性
 
-1. **音声ストリーミング**: `audio=true`でオーディオ追加
-2. **リモート操作**: `control=true`でタッチ/キー入力
+1. **音声ストリーミング**: `audio=true` でオーディオ追加
+2. **リモート操作**: `control=true` でタッチ/キー入力
 3. **録画機能**: ストリームをサーバー側で保存
 4. **複数デバイス同時表示**: グリッドレイアウト
-5. **品質調整**: ビットレート・解像度の動的変更
+5. **品質調整**: ビットレート・解像度の動的変更（`update_config()` で対応済み）

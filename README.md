@@ -136,6 +136,7 @@ screen-stream-capture/
 ## ドキュメント
 
 - [アーキテクチャ詳細](docs/architecture.md)
+- [API リファレンス](docs/api-reference.md)
 - [Python ライブラリ](packages/android-screen-stream/README.md)
 - [React コンポーネント](packages/react-android-screen/README.md)
 
