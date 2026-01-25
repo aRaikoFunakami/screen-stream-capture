@@ -34,6 +34,8 @@ config = StreamConfig.high_quality()   # 1080p, 60fps, 8Mbps
 | `max_fps` | `int` | `30` | 最大フレームレート |
 | `bit_rate` | `int` | `2_000_000` | ビットレート (bps) |
 | `video_codec` | `str` | `"h264"` | ビデオコーデック ("h264", "h265", "av1") |
+| `i_frame_interval` | `int` | `1` | I-frame 間隔（秒）。小さいほど途中参加の復帰が速い |
+| `prepend_header_to_sync_frames` | `bool` | `true` | 同期フレーム(IDR等)にSPS/PPS等のヘッダを付けるようエンコーダに要求（端末依存） |
 
 #### クラスメソッド
 
@@ -99,6 +101,11 @@ ScrcpyClient(
 ### StreamSession
 
 マルチキャスト対応のストリーミングセッション。複数クライアントへの同時配信をサポートします。
+
+途中参加（late join）で白画面にならないよう、サーバ側で直近の SPS/PPS と最新GOP(IDR〜現在) を保持し、
+join 時に "初期化できる塊" を先頭に送る実装になっています。
+
+詳細: [docs/late-join.md](late-join.md)
 
 ```python
 from android_screen_stream import StreamSession, StreamConfig

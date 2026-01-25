@@ -6,13 +6,86 @@ StreamSession - マルチキャスト対応のストリーミングセッショ�
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
 from .config import StreamConfig
 from .client import ScrcpyClient
 
 logger = logging.getLogger(__name__)
+
+
+class _AnnexBExtractor:
+    """AnnexB形式のバイト列から完全なNAL unit列を抽出する。
+
+    TCP read などで任意分割された raw H.264 (AnnexB) を入力として受け取り、
+    start code (00 00 01 / 00 00 00 01) で区切られた NAL unit を返す。
+
+    末尾の未確定データは内部バッファに保持され、次回入力で確定する。
+    """
+
+    def __init__(self, *, max_buffer_bytes: int = 512 * 1024):
+        self._buf = bytearray()
+        self._max = max_buffer_bytes
+
+    def push(self, data: bytes) -> list[bytes]:
+        if data:
+            self._buf.extend(data)
+            if len(self._buf) > self._max:
+                # start code を探してから末尾を残す（無い場合は末尾のみ残す）
+                cut = len(self._buf) - self._max
+                del self._buf[:cut]
+
+        buf = self._buf
+        n = len(buf)
+        if n < 4:
+            return []
+
+        starts: list[int] = []
+        i = 0
+        while i < n - 3:
+            if buf[i] == 0 and buf[i + 1] == 0:
+                if buf[i + 2] == 1:
+                    starts.append(i)
+                    i += 3
+                    continue
+                if i < n - 4 and buf[i + 2] == 0 and buf[i + 3] == 1:
+                    starts.append(i)
+                    i += 4
+                    continue
+            i += 1
+
+        if not starts:
+            return []
+
+        # start code 前のゴミを捨てる
+        if starts[0] != 0:
+            del buf[: starts[0]]
+            # 再スキャン（短いので許容）
+            return self.push(b"")
+
+        if len(starts) < 2:
+            return []
+
+        out: list[bytes] = []
+        for a, b in zip(starts, starts[1:]):
+            if a < b:
+                out.append(bytes(buf[a:b]))
+
+        # 末尾（最後の start code から）は未確定として保持
+        last = starts[-1]
+        self._buf = buf[last:]
+        return out
+
+
+def _nal_type(nal: bytes) -> Optional[int]:
+    if len(nal) < 5:
+        return None
+    if nal.startswith(b"\x00\x00\x00\x01"):
+        return nal[4] & 0x1F
+    if nal.startswith(b"\x00\x00\x01"):
+        return nal[3] & 0x1F
+    return None
 
 
 @dataclass
@@ -63,8 +136,20 @@ class StreamSession:
         self._running = False
         self._subscribers: list[asyncio.Queue[bytes]] = []
         self._lock = asyncio.Lock()
+        self._subscribe_lock = asyncio.Lock()
         self._broadcast_task: Optional[asyncio.Task] = None
+        self._delayed_stop_task: Optional[asyncio.Task] = None
         self._stats = StreamStats()
+
+        # late joiner 対応: SPS/PPS と「最新GOP(IDR〜現在)」を保持して join 時に先に送る
+        self._extractor = _AnnexBExtractor()
+        self._last_sps: bytes = b""
+        self._last_pps: bytes = b""
+        self._au_prefix: list[bytes] = []  # AUD/SEI 等（直近VCL前）
+        self._gop_nals: list[bytes] = []
+        self._gop_bytes: int = 0
+        self._gop_has_idr: bool = False
+        self._gop_max_bytes: int = 4 * 1024 * 1024
     
     async def start(self) -> None:
         """ストリーミングセッションを開始"""
@@ -99,10 +184,27 @@ class StreamSession:
                 await self._broadcast_task
             except asyncio.CancelledError:
                 pass
+
+        if self._delayed_stop_task:
+            self._delayed_stop_task.cancel()
+            try:
+                await self._delayed_stop_task
+            except asyncio.CancelledError:
+                pass
+            self._delayed_stop_task = None
         
         if self._client:
             await self._client.stop()
             self._client = None
+
+        # 解析/キャッシュをリセット
+        self._extractor = _AnnexBExtractor()
+        self._last_sps = b""
+        self._last_pps = b""
+        self._au_prefix.clear()
+        self._gop_nals.clear()
+        self._gop_bytes = 0
+        self._gop_has_idr = False
         
         # 購読者に終了を通知
         async with self._lock:
@@ -112,6 +214,7 @@ class StreamSession:
                 except asyncio.QueueFull:
                     pass
             self._subscribers.clear()
+            self._stats.subscriber_count = 0
         
         logger.info(f"Stream session stopped for {self.serial}")
     
@@ -130,44 +233,155 @@ class StreamSession:
     
     async def subscribe(self) -> AsyncIterator[bytes]:
         """ストリームを購読
+
+        ブラウザ側(JMuxer)は raw H.264 を受けて fMP4 を生成するため、途中参加(late join)
+        では SPS/PPS + IDR が揃わず白画面になることがある。
+
+        そのため、サーバ側で直近の SPS/PPS と「最新GOP(IDR〜現在)」を保持し、
+        新規参加時に必ず "初期化できる塊" (SPS + PPS + IDR + 以降のフレーム) を先に送る。
         
         Yields:
             bytes: H.264 データチャンク
         """
-        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
-        
-        async with self._lock:
-            self._subscribers.append(queue)
-            self._stats.subscriber_count = len(self._subscribers)
-        
-        logger.info(f"New subscriber for {self.serial}. Total: {len(self._subscribers)}")
+        # 複数クライアントが同時に接続する場合に、0→1 判定〜起動/再起動が競合しないよう直列化
+        async with self._subscribe_lock:
+            # 遅延停止が予約されている場合はキャンセル（再接続のため）
+            if self._delayed_stop_task:
+                self._delayed_stop_task.cancel()
+                self._delayed_stop_task = None
+
+            # アーキテクチャ上、ブラウザ側(JMuxer)は raw H.264 を受けて fMP4 を生成するため、
+            # 新しい購読者はストリーム先頭付近の codec config (SPS/PPS 等) が必要。
+            # 購読者 0 の状態でストリームが動き続けると、途中参加になり白画面になることがあるので、
+            # 0→1 の遷移時はセッションをリスタートして「先頭から」配信する。
+            async with self._lock:
+                total_subscribers = len(self._subscribers)
+                should_restart = self._running and total_subscribers == 0 and self._stats.chunks_sent > 0
+
+            if should_restart:
+                logger.info(f"Restarting stream session for fresh subscriber: {self.serial}")
+                await self.stop()
+                await self.start()
+
+            # 既に誰かが視聴中なら、GOPスナップショットをキューに先に詰めてから購読者登録する。
+            # (ロック中に詰めることで、スナップショットとライブデータの順序が崩れない)
+            async with self._lock:
+                late_join = len(self._subscribers) > 0
+                gop_snapshot = list(self._gop_nals) if (late_join and self._gop_has_idr) else []
+                # スナップショット分 + 余裕
+                qsize = max(200, len(gop_snapshot) + 200)
+                queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=qsize)
+
+                for nal in gop_snapshot:
+                    try:
+                        queue.put_nowait(nal)
+                    except asyncio.QueueFull:
+                        # 想定外: 初期化塊が入らないと意味がないので、ここは落とす
+                        raise RuntimeError("GOP snapshot queue overflow")
+
+                self._subscribers.append(queue)
+                self._stats.subscriber_count = len(self._subscribers)
+                state = "late-join" if late_join else "active"
+
+            logger.info(
+                f"New subscriber for {self.serial}. state={state} subscribers={len(self._subscribers)} gop_prefill_nals={len(gop_snapshot)}"
+            )
         
         try:
-            while self._running:
+            while True:
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    if not chunk:  # 終了シグナル
-                        break
-                    yield chunk
                 except asyncio.TimeoutError:
+                    if not self._running:
+                        break
                     continue
+
+                if not chunk:  # 終了シグナル
+                    break
+                yield chunk
         finally:
             async with self._lock:
                 if queue in self._subscribers:
                     self._subscribers.remove(queue)
                 self._stats.subscriber_count = len(self._subscribers)
-            logger.info(f"Subscriber removed for {self.serial}. Total: {len(self._subscribers)}")
+
+                subscribers = len(self._subscribers)
+            logger.info(f"Subscriber removed for {self.serial}. subscribers={subscribers}")
             
             # 購読者がいなくなったら遅延停止
-            if not self._subscribers:
-                asyncio.create_task(self._delayed_stop())
+            if subscribers == 0:
+                if self._delayed_stop_task:
+                    self._delayed_stop_task.cancel()
+                self._delayed_stop_task = asyncio.create_task(self._delayed_stop())
     
     async def _delayed_stop(self) -> None:
         """遅延停止（再接続の猶予）"""
-        await asyncio.sleep(5.0)
-        async with self._lock:
-            if not self._subscribers:
+        try:
+            await asyncio.sleep(5.0)
+            async with self._lock:
+                should_stop = len(self._subscribers) == 0
+            if should_stop:
                 await self.stop()
+        finally:
+            self._delayed_stop_task = None
+
+    def _update_gop_cache(self, nal: bytes) -> None:
+        nal_t = _nal_type(nal)
+        if nal_t is None:
+            return
+
+        if nal_t == 7:  # SPS
+            self._last_sps = nal
+            return
+        if nal_t == 8:  # PPS
+            self._last_pps = nal
+            return
+
+        # AUD/SEI は直近VCL前のprefixとして保持（IDRに添える）
+        if nal_t in (6, 9):
+            self._au_prefix.append(nal)
+            # prefix が肥大化しないように上限
+            if len(self._au_prefix) > 16:
+                self._au_prefix = self._au_prefix[-16:]
+            return
+
+        # VCL
+        if nal_t == 5:  # IDR
+            # 新しいGOP開始: SPS/PPSを先頭に固定し、直前のAUD/SEIを添える
+            gop: list[bytes] = []
+            if self._last_sps:
+                gop.append(self._last_sps)
+            if self._last_pps:
+                gop.append(self._last_pps)
+            gop.extend(self._au_prefix)
+            gop.append(nal)
+            self._au_prefix.clear()
+
+            self._gop_nals = gop
+            self._gop_bytes = sum(len(x) for x in gop)
+            self._gop_has_idr = True
+            return
+
+        if nal_t == 1:  # non-IDR slice
+            self._au_prefix.clear()
+            if self._gop_has_idr:
+                self._gop_nals.append(nal)
+                self._gop_bytes += len(nal)
+                if self._gop_bytes > self._gop_max_bytes:
+                    # 大きすぎるGOPは late join の初期化塊として扱えないので捨てる
+                    self._gop_nals.clear()
+                    self._gop_bytes = 0
+                    self._gop_has_idr = False
+            return
+
+        # その他のNALは、GOPが始まっていればそのまま追記（JMuxer側で必要になる可能性がある）
+        if self._gop_has_idr:
+            self._gop_nals.append(nal)
+            self._gop_bytes += len(nal)
+            if self._gop_bytes > self._gop_max_bytes:
+                self._gop_nals.clear()
+                self._gop_bytes = 0
+                self._gop_has_idr = False
     
     async def _run_broadcast(self) -> None:
         """データを全購読者にブロードキャスト"""
@@ -179,15 +393,23 @@ class StreamSession:
                 if not self._running:
                     break
                 
-                self._stats.bytes_sent += len(chunk)
-                self._stats.chunks_sent += 1
-                
-                async with self._lock:
-                    for queue in self._subscribers:
+                # raw chunk を NAL unit に分解して配信する（late join の順序保証のため）
+                nals = self._extractor.push(chunk)
+                for nal in nals:
+                    self._update_gop_cache(nal)
+
+                    self._stats.bytes_sent += len(nal)
+                    self._stats.chunks_sent += 1
+
+                    async with self._lock:
+                        subscribers = list(self._subscribers)
+
+                    for queue in subscribers:
                         try:
-                            queue.put_nowait(chunk)
+                            queue.put_nowait(nal)
                         except asyncio.QueueFull:
-                            pass  # クライアントが遅い場合はスキップ
+                            # 追いつけないクライアントはドロップ（他への配信を優先）
+                            pass
         except Exception as e:
             logger.error(f"Broadcast error for {self.serial}: {e}")
         finally:

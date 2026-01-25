@@ -151,6 +151,20 @@ async for chunk in session.subscribe():
 await session.update_config(StreamConfig.high_quality())
 ```
 
+---
+
+## 途中参加（late join）と白画面問題
+
+このプロジェクトは `raw_stream=true` の raw H.264 (Annex B) を WebSocket で配信し、
+ブラウザ側で JMuxer が fMP4(MSE) を生成します。
+
+この方式は低遅延ですが、途中参加したクライアントが **SPS/PPS + IDR** を揃えられないと、
+「接続できてバイト数も増えるのに白画面」という症状が起きます。
+
+詳細（原因・対策・実装・図）:
+
+- [途中参加（late join）で白画面になる問題と解決策](late-join.md)
+
 ### 4. StreamManager（Python ライブラリ）
 
 複数デバイスのセッション管理。

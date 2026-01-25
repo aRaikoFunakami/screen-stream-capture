@@ -70,6 +70,7 @@ Thumbs.db
 
 # Vendor (downloaded binaries)
 vendor/*.jar
+scrcpy/
 
 # Build outputs for examples
 examples/*/backend/.venv/
