@@ -14,6 +14,8 @@ services:
       - SCRCPY_SERVER_JAR=/app/vendor/scrcpy-server.jar
       # ホストの adb server を使用
       - ADB_SERVER_SOCKET=tcp:host.docker.internal:5037
+      # adb forward で開いたポートはホスト側なので host.docker.internal に接続
+      - SCRCPY_CONNECT_HOST=host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload

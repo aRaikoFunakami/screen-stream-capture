@@ -6,6 +6,7 @@ ScrcpyClient - scrcpy-serverに直接接続してraw H.264ストリームを取�
 
 import asyncio
 import logging
+import os
 import socket
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -43,6 +44,7 @@ class ScrcpyClient:
         server_jar: str,
         config: Optional[StreamConfig] = None,
         local_port: int = 0,
+        connect_host: Optional[str] = None,
     ):
         """
         Args:
@@ -50,6 +52,7 @@ class ScrcpyClient:
             server_jar: ローカルの scrcpy-server.jar ファイルパス
             config: ストリーミング設定 (省略時はデフォルト)
             local_port: ローカルポート (0 = 自動割り当て)
+            connect_host: 接続先ホスト (Docker環境では "host.docker.internal")
         
         Raises:
             FileNotFoundError: server_jar が存在しない場合
@@ -58,6 +61,8 @@ class ScrcpyClient:
         self.server_jar = Path(server_jar)
         self.config = config or StreamConfig()
         self.local_port = local_port or self._find_free_port()
+        # Docker 環境では ADB_SERVER_SOCKET が設定されている場合 host.docker.internal を使用
+        self.connect_host = connect_host or os.environ.get("SCRCPY_CONNECT_HOST", "localhost")
         
         if not self.server_jar.exists():
             raise FileNotFoundError(f"Server jar not found: {self.server_jar}")
@@ -140,12 +145,12 @@ class ScrcpyClient:
     
     async def _connect(self) -> None:
         """TCPソケットに接続"""
-        logger.info(f"Connecting to localhost:{self.local_port}")
+        logger.info(f"Connecting to {self.connect_host}:{self.local_port}")
         
         for attempt in range(10):
             try:
                 self._reader, self._writer = await asyncio.open_connection(
-                    "localhost", self.local_port
+                    self.connect_host, self.local_port
                 )
                 logger.info("Connected to server")
                 return
