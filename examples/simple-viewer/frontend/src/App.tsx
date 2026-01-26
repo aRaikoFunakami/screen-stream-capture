@@ -207,7 +207,7 @@ function App() {
 
       <main className="container mx-auto p-4">
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">システム状態</h2>
+          <h2 className="text-xl font-semibold mb-4 text-gray-900">システム状態</h2>
 
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -216,13 +216,14 @@ function App() {
           )}
 
           {health ? (
-            <div className="space-y-2">
+            <div className="space-y-2 text-gray-800">
               <p>
-                <span className="font-medium">ステータス:</span>{' '}
+                <span className="font-medium text-gray-700">ステータス:</span>{' '}
                 <span className={health.status === 'ok' ? 'text-green-600' : 'text-red-600'}>{health.status}</span>
               </p>
               <p>
-                <span className="font-medium">バージョン:</span> {health.version}
+                <span className="font-medium text-gray-700">バージョン:</span>{' '}
+                <span className="text-gray-900">{health.version}</span>
               </p>
             </div>
           ) : (
@@ -231,7 +232,7 @@ function App() {
         </div>
 
         <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">デバイス一覧 ({devices.length}台)</h2>
+          <h2 className="text-xl font-semibold mb-4 text-gray-900">デバイス一覧 ({devices.length}台)</h2>
 
           {devices.length === 0 ? (
             <p className="text-gray-500">接続されているデバイスがありません</p>
@@ -249,7 +250,7 @@ function App() {
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`w-3 h-3 rounded-full ${getStateColor(device.state)}`} />
-                    <span className="font-medium">
+                    <span className="font-medium text-gray-900">
                       {device.model || device.serial}
                     </span>
                     {device.isEmulator && (
@@ -284,7 +285,7 @@ function App() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
               <div className="flex items-center gap-4">
-                <h3 className="text-lg font-semibold">{selectedDevice}</h3>
+                <h3 className="text-lg font-semibold text-gray-900">{selectedDevice}</h3>
                 <div className="flex items-center gap-2 text-sm">
                   <span
                     className={`w-2 h-2 rounded-full ${
