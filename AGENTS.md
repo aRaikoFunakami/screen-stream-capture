@@ -1,6 +1,85 @@
-# AGENTS.md - AI コーディングエージェント向けガイド
+# AGENTS.md
 
-このドキュメントは、GitHub Copilot、Claude、Cursor などの AI コーディングエージェントが本プロジェクトを理解し、適切にコードを生成・修正するための指示書です。
+このリポジトリで AI（例: GitHub Copilot）と人間が作業するための **契約**。
+迷ったらこのファイルを最優先する。
+
+---
+
+## 0. TL;DR（最重要だけ）
+
+- 変更は **1ステップずつ**。各ステップで必ず検証する（バッチ変更禁止）
+- 「カウントされる変更」以外に寄り道しない（ドリフト防止）
+- Non-negotiables を破らない
+- “直った/改善した”は **証拠（tests/metrics/diff）** が出てから言う
+- 実行は必ず **制限付き**（timeout / スコープ / リソース）
+
+
+## 2. 「カウントされる変更 / されない変更」
+
+### 2.1 カウントされる（進捗）
+
+- 新機能：<定義>（回帰テスト必須）
+- バグ修正：<定義>（Fail→Pass テスト必須）
+- 安定性：クラッシュ/パニック/例外の排除（回帰テスト必須）
+- 終了性：タイムアウト/無限ループの排除（回帰テスト必須）
+- 適合性：意味のあるテストカバレッジ追加
+- UX：ユーザーに見える品質向上
+
+### 2.2 カウントされない（ドリフト防止）
+
+- ツール/インフラだけ：成果に直結しない変更
+- パフォーマンスだけ：終了性や精度に繋がらない最適化
+- ドキュメントだけ：混乱を解消しない文書追加
+
+---
+
+## 3. Non-negotiables（絶対禁止）
+
+- 特定ケースだけ通すハック禁止（host名・特定入力・マジック値で帳尻合わせ等）
+- 仕様ショートカット禁止（「動くからOK」禁止）
+- <panic/例外握りつぶし> 禁止：<プロジェクト標準のエラー方針> を使う
+- 無制限実行禁止：必ず timeout / スコープ制限をかける
+- 巨大差分禁止：1PRの上限 <files/LOC>、逸脱時は分割
+
+---
+
+## 4. 証拠（Evidence）要件
+
+### 4.1 証拠レベル
+
+- 最良：自動テスト（Fail→Pass） + 回帰
+- 次点：メトリクス（Before/After） + 再現手順
+- 最低：手動確認ログ（スクショ/動画/チェックリスト）
+- 禁止：「改善した」宣言のみ
+
+### 4.2 主張→必要証拠
+
+| 主張 | 必要な証拠 |
+| --- | --- |
+| バグを修正した | Fail→Pass テスト |
+| 性能が改善した | Before/After（数値） + 再現スクリプト |
+| 終了性を改善した | timeout/無限ループ再現→解消テスト |
+
+---
+
+## 5. 開発ループ（Single-step）
+
+1) 現状確認（再現 or ベースライン取得）
+2) 差異を1つ特定
+3) 変更を1つ入れる
+4) 直後に検証（tests/metrics）
+5) ダメなら 2 に戻る
+
+---
+
+## 6. 実行（許可コマンド）
+
+- ビルド：`timeout -k <k> <t> <build command>`
+- テスト：`timeout -k <k> <t> <test command>`
+- ベンチ：`timeout -k <k> <t> <bench command>`
+- スコープ制限：<workspace/package/target の指定方法>
+
+
 
 ---
 
@@ -41,28 +120,10 @@ Android デバイスの画面を Web ブラウザにリアルタイムでスト�
 
 ### アーキテクチャ
 
-```mermaid
-graph LR
-    subgraph Android
-        SC[scrcpy-server<br/>H.264 Encode]
-    end
-    
-    subgraph Backend["Backend (Python)"]
-        CLIENT[ScrcpyClient<br/>TCP接続]
-        SESSION[StreamSession<br/>マルチキャスト]
-        WS[WebSocket<br/>Server]
-    end
-    
-    subgraph Browser
-        WSC[WebSocket<br/>Client]
-        JMUX[JMuxer<br/>H.264→MSE]
-        VIDEO["&lt;video&gt;<br/>再生"]
-    end
-    
-    SC -->|raw H.264| CLIENT
-    CLIENT --> SESSION --> WS
-    WS -->|binary| WSC --> JMUX --> VIDEO
-```
+アーキテクチャ: docs/architecture.md
+バックエンドAPI: docs/api-reference.md (削除するか検討)
+バックエンドAPI: docs/backend-openapi.md 
+raw H.264 配信を途中から受信を実現する方法: docs/latest-join.md
 
 ---
 
