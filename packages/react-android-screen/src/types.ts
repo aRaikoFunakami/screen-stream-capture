@@ -55,6 +55,8 @@ export interface UseAndroidStreamOptions {
   onDisconnected?: () => void
   /** エラー時のコールバック */
   onError?: (error: string) => void
+  /** 解像度変更時のコールバック */
+  onResolutionChange?: () => void
 }
 
 /**

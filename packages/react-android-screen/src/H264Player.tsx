@@ -124,15 +124,46 @@ export function H264Player({
     }
   }, [disconnect])
 
+  // video要素のサイズ変更を監視してレイアウトを更新
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleResize = () => {
+      const { videoWidth, videoHeight } = video
+      if (videoWidth > 0 && videoHeight > 0) {
+        console.log(`H264Player: Video resolution changed to ${videoWidth}x${videoHeight}`)
+        // 強制的にスタイルを更新してレイアウトをトリガー
+        video.style.aspectRatio = `${videoWidth} / ${videoHeight}`
+      }
+    }
+
+    // loadedmetadata と resize イベントを監視
+    video.addEventListener('loadedmetadata', handleResize)
+    video.addEventListener('resize', handleResize)
+
+    return () => {
+      video.removeEventListener('loadedmetadata', handleResize)
+      video.removeEventListener('resize', handleResize)
+    }
+  }, [videoRef])
+
   return (
-    <div className={`relative bg-black rounded-lg overflow-hidden ${className}`}>
+    <div 
+      className={`relative bg-black rounded-lg overflow-hidden ${className}`}
+    >
       <video
         ref={videoRef}
         autoPlay
         muted
         playsInline
-        className="w-full h-auto"
-        style={{ maxHeight: '70vh' }}
+        style={{ 
+          width: '100%',
+          height: 'auto',
+          maxHeight: '70vh',
+          display: 'block',
+          objectFit: 'contain',
+        }}
       />
       
       {/* ステータスオーバーレイ */}

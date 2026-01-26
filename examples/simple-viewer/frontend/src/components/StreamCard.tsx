@@ -183,10 +183,10 @@ export function StreamCard({
       </div>
 
       {/* Streaming area with capture overlay */}
-      <div className="relative bg-black rounded overflow-hidden" style={{ aspectRatio: '9/16', maxHeight: '400px' }}>
+      <div className="relative bg-black rounded overflow-hidden">
         <H264Player
           wsUrl={`/api/ws/stream/${serial}`}
-          className="w-full h-full object-contain"
+          className="w-full"
           onError={(error: string) => console.error('Player error:', error)}
           onConnected={() => console.log(`Stream connected: ${serial}`)}
           onDisconnected={() => console.log(`Stream disconnected: ${serial}`)}
