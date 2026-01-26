@@ -38,6 +38,31 @@ logger = logging.getLogger(__name__)
 _RE_DIM = re.compile(r"(?P<w>\d{2,5})x(?P<h>\d{2,5})")
 
 
+def _find_sps_nal_unit(data: bytes) -> bytes | None:
+    """H.264データからSPS NAL unitを探す。解像度変更の検出に使用。"""
+    i = 0
+    while i < len(data) - 4:
+        # NAL start code を探す (0x00 0x00 0x00 0x01 または 0x00 0x00 0x01)
+        nal_start = -1
+        if data[i] == 0 and data[i + 1] == 0 and data[i + 2] == 0 and data[i + 3] == 1:
+            nal_start = i + 4
+        elif data[i] == 0 and data[i + 1] == 0 and data[i + 2] == 1:
+            nal_start = i + 3
+        
+        if nal_start >= 0 and nal_start < len(data):
+            nal_type = data[nal_start] & 0x1f
+            # NAL type 7 = SPS
+            if nal_type == 7:
+                # 次のstart codeまで、またはデータ終端までをSPSとして返す
+                for j in range(nal_start, len(data) - 3):
+                    if ((data[j] == 0 and data[j + 1] == 0 and data[j + 2] == 0 and data[j + 3] == 1) or
+                        (data[j] == 0 and data[j + 1] == 0 and data[j + 2] == 1)):
+                        return data[nal_start:j]
+                return data[nal_start:]
+        i += 1
+    return None
+
+
 def _quality_percent_to_mjpeg_qscale(quality: int) -> int:
     """Map a 1-100 quality percent to ffmpeg mjpeg qscale (2-31)."""
 
@@ -94,6 +119,8 @@ class CaptureWorker:
 
         self._width: int | None = None
         self._height: int | None = None
+        self._last_sps: bytes | None = None  # SPS変更検出用
+        self._resolution_changed: bool = False  # 解像度変更フラグ
 
         self._refcount = 0
         self._ref_lock = asyncio.Lock()
@@ -335,6 +362,82 @@ class CaptureWorker:
         self._task_read = None
         self._task_stderr = None
 
+    async def _restart_decoder_for_resolution_change(self, first_chunk: bytes) -> None:
+        """解像度変更時にffmpegデコーダを再起動する。"""
+        logger.info(f"Restarting decoder for resolution change: {self.serial}")
+        
+        # 現在のffmpegプロセスを停止
+        if self._proc is not None:
+            with contextlib.suppress(Exception):
+                if self._proc.stdin:
+                    self._proc.stdin.close()
+            self._proc.terminate()
+            try:
+                await asyncio.wait_for(self._proc.wait(), timeout=1.0)
+            except TimeoutError:
+                self._proc.kill()
+                await self._proc.wait()
+        
+        # 状態をリセット
+        self._proc = None
+        self._width = None
+        self._height = None
+        self._latest_frame = None
+        
+        # タスクをキャンセル（読み取りタスクはプロセス終了で自動終了するはず）
+        if self._task_read is not None:
+            self._task_read.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task_read
+            self._task_read = None
+        if self._task_stderr is not None:
+            self._task_stderr.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task_stderr
+            self._task_stderr = None
+        
+        # 新しいffmpegプロセスを起動
+        await self._start_decoder_process_only()
+        
+        # 最初のチャンク（SPSを含む）を書き込む
+        if self._proc is not None and self._proc.stdin is not None:
+            self._proc.stdin.write(first_chunk)
+            await self._proc.stdin.drain()
+            logger.info(f"Decoder restarted for {self.serial}, fed first chunk with new SPS")
+
+    async def _start_decoder_process_only(self) -> None:
+        """ffmpegプロセスのみを起動する（タスクは別途開始）。"""
+        args = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-nostats",
+            "-nostdin",
+            "-f",
+            "h264",
+            "-i",
+            "pipe:0",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "pipe:1",
+        ]
+
+        logger.info(f"Starting decoder process for {self.serial}: {' '.join(args)}")
+
+        self._proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # 読み取りタスクを開始
+        self._task_read = asyncio.create_task(self._read_rawvideo_loop(), name=f"capture-read-{self.serial}")
+        self._task_stderr = asyncio.create_task(self._read_ffmpeg_stderr_loop(), name=f"capture-stderr-{self.serial}")
+
     async def _feed_h264_loop(self) -> None:
         assert self._proc is not None
         assert self._proc.stdin is not None
@@ -354,6 +457,20 @@ class CaptureWorker:
                 async for chunk in session.subscribe():
                     if not chunk or self._proc is None:
                         break
+                    
+                    # SPS変更を検出（解像度変更の検出）
+                    sps = _find_sps_nal_unit(chunk)
+                    if sps is not None:
+                        if self._last_sps is None:
+                            logger.info(f"Capture feed {self.serial}: initial SPS detected")
+                            self._last_sps = sps
+                        elif sps != self._last_sps:
+                            logger.info(f"Capture feed {self.serial}: SPS changed (resolution change), restarting decoder")
+                            self._last_sps = sps
+                            # ffmpegプロセスを再起動
+                            await self._restart_decoder_for_resolution_change(chunk)
+                            continue
+                    
                     try:
                         self._proc.stdin.write(chunk)
                         await self._proc.stdin.drain()
@@ -396,22 +513,26 @@ class CaptureWorker:
                 # Log all ffmpeg stderr for debugging
                 logger.debug(f"ffmpeg stderr [{self.serial}]: {text}")
                 
-                # Detect resolution once, but always keep draining stderr to avoid blocking ffmpeg.
-                if self._width is None or self._height is None:
-                    if "Video:" not in text:
-                        continue
-                    m = _RE_DIM.search(text)
-                    if not m:
-                        continue
+                # Detect resolution changes (not just initial detection)
+                if "Video:" not in text:
+                    continue
+                m = _RE_DIM.search(text)
+                if not m:
+                    continue
 
-                    w = int(m.group("w"))
-                    h = int(m.group("h"))
-                    if w <= 0 or h <= 0:
-                        continue
+                w = int(m.group("w"))
+                h = int(m.group("h"))
+                if w <= 0 or h <= 0:
+                    continue
 
+                if self._width != w or self._height != h:
+                    old_w, old_h = self._width, self._height
                     self._width = w
                     self._height = h
-                    logger.info(f"Capture decoder resolution for {self.serial}: {w}x{h}")
+                    if old_w is None:
+                        logger.info(f"Capture decoder resolution for {self.serial}: {w}x{h}")
+                    else:
+                        logger.info(f"Capture decoder resolution changed for {self.serial}: {old_w}x{old_h} -> {w}x{h}")
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -425,6 +546,8 @@ class CaptureWorker:
         read_count = 0
         total_bytes = 0
         frame_count = 0
+        last_width: int | None = None
+        last_height: int | None = None
 
         logger.info(f"Capture rawvideo loop started for {self.serial}")
 
@@ -444,6 +567,20 @@ class CaptureWorker:
 
                 if self._width is None or self._height is None:
                     continue
+                
+                # 解像度変更時にバッファをクリア
+                if self._resolution_changed:
+                    logger.info(f"Capture rawvideo {self.serial}: resolution changed flag set, clearing buffer ({len(buf)} bytes)")
+                    buf.clear()
+                    self._resolution_changed = False
+                elif last_width is not None and last_height is not None:
+                    if self._width != last_width or self._height != last_height:
+                        logger.info(f"Capture rawvideo {self.serial}: resolution changed, clearing buffer ({len(buf)} bytes)")
+                        buf.clear()
+                        
+                last_width = self._width
+                last_height = self._height
+                
                 frame_size = _yuv420p_frame_size(self._width, self._height)
                 if frame_size <= 0:
                     continue
