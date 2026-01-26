@@ -2,6 +2,15 @@
 
 WS /api/ws/capture/{serial}
 
+概要:
+    WebSocket接続中、バックエンドはH.264デコーダを起動し、最新フレームを保持します。
+    クライアントからのキャプチャリクエストに対し、その時点の画面をJPEGエンコードして返します。
+
+仕様（重要）:
+    - 最初のキャプチャは約0.5〜1秒かかる場合があります。
+      これはデコーダ起動直後で、最初のフレームが来るまで待つ必要があるためです。
+    - 2回目以降のキャプチャは約60〜120msで完了します。
+
 Protocol (minimal):
 - client -> server (text JSON): {"type":"capture","format":"jpeg","quality":80,"save":true}
 - server -> client (text JSON): {"type":"capture_result",...}

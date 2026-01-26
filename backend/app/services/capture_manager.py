@@ -8,6 +8,13 @@ work/multi_device_stream_and_capture/plan.md.
     decoder running (ffmpeg) and continuously updates the latest decoded frame in memory.
 - On a capture request, the backend encodes that latest frame to JPEG and returns
     the JPEG bytes.
+
+パフォーマンス仕様:
+    - 最初のキャプチャ: 約0.5〜1秒（デコーダ起動後、最初のフレームを待つため）
+    - 2回目以降のキャプチャ: 約60〜120ms（フレーム取得 + JPEGエンコード）
+    
+    この遅延は、デコーダが起動直後でまだフレームが届いていない状態で
+    キャプチャリクエストを受けた場合に発生します。
 """
 
 from __future__ import annotations
@@ -124,13 +131,22 @@ class CaptureWorker:
 
     async def capture_jpeg(self, *, quality: Optional[int], save: bool) -> tuple[CaptureResult, bytes]:
         """Return a JPEG image (bytes) and its metadata."""
+        import time
+        t0 = time.perf_counter()
 
         quality_percent = int(quality) if quality is not None else int(self._default_quality)
         qscale = _quality_percent_to_mjpeg_qscale(quality_percent)
 
         async with self._encode_sem:
+            t1 = time.perf_counter()
             frame = await self._get_latest_frame(timeout_sec=5.0)
+            t2 = time.perf_counter()
             jpeg = await self._encode_jpeg_with_ffmpeg(frame, qscale=qscale)
+            t3 = time.perf_counter()
+            logger.info(
+                f"Capture timing for {self.serial}: "
+                f"sem_wait={t1-t0:.3f}s, get_frame={t2-t1:.3f}s, encode={t3-t2:.3f}s, total={t3-t0:.3f}s"
+            )
 
             capture_id = str(uuid4())
             captured_at = datetime.now(timezone.utc).isoformat()
