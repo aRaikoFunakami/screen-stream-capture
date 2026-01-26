@@ -24,6 +24,7 @@ from app.api.router import api_router
 from app.api.endpoints import healthz
 from app.core.config import load_settings
 from app.core.logging import configure_logging
+from app.services.capture_manager import get_capture_manager
 from app.services.device_manager import get_device_manager
 from app.services.sse_manager import get_sse_manager
 
@@ -63,9 +64,17 @@ async def lifespan(app: FastAPI):
         default_config=StreamConfig.balanced(),
     )
 
+    app.state.capture_manager = get_capture_manager(
+        stream_manager=app.state.stream_manager,
+        output_dir=settings.capture_output_dir,
+    )
+
     yield
 
     logger.info("Stopping services...")
+    capture_manager = getattr(app.state, "capture_manager", None)
+    if capture_manager:
+        await capture_manager.stop_all()
     stream_manager = getattr(app.state, "stream_manager", None)
     if stream_manager:
         await stream_manager.stop_all()
@@ -89,6 +98,7 @@ def create_app() -> FastAPI:
             {"name": "events", "description": "SSE events"},
             {"name": "sessions", "description": "Stream session management"},
             {"name": "stream", "description": "WebSocket H.264 streaming"},
+            {"name": "capture", "description": "WebSocket JPEG capture"},
         ],
     )
 

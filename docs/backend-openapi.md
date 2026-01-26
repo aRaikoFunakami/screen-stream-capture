@@ -15,6 +15,9 @@
 - デバイス詳細: `GET /api/devices/{serial}`
 - デバイス変更イベント（SSE）: `GET /api/events`
 - H.264 ストリーム（WebSocket）: `WS /api/ws/stream/{serial}`
+- JPEG キャプチャ（WebSocket）: `WS /api/ws/capture/{serial}`
+
+キャプチャ画像の保存先は環境変数 `CAPTURE_OUTPUT_DIR` で指定できます（未指定時は `captures/`）。
 
 ## OpenAPI の保存（任意）
 

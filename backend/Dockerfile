@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     android-tools-adb \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # uv をインストール
