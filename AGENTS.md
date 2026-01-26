@@ -132,7 +132,8 @@
 |-------------|-------------------|
 | **[README.md](./README.md)** | プロジェクト全体の把握、セットアップ方法 |
 | **[docs/architecture.md](./docs/architecture.md)** | アーキテクチャ詳細 |
-| **[docs/backend-openapi.md](./docs/backend-openapi.md)** | FastAPI の自動生成 API ドキュメント（/docs）の見方 |
+| **[docs/backend-openapi.md](./docs/backend-openapi.md)** | REST/WebSocket API 概要（WebSocketプロトコル参照あり） |
+| **[docs/openapi.json](./docs/openapi.json)** | REST API スキーマ（サーバー起動不要で参照可能） |
 | **[instructions/git-commit.md](./instructions/git-commit.md)** | コミットメッセージ規約（Conventional Commits / テスト記載ルール） |
 
 **追加ルール**: 作業を始める前に `instructions/` 配下に新しい `*.md` が増えていないか必ず確認し、増えていた場合はこの表に **正しいファイル名** と **内容が分かる説明** を追記してから作業を開始すること。
@@ -216,9 +217,31 @@ make rebuild
 公式 backend（FastAPI）は OpenAPI を自動生成します。手書き仕様ではなく、
 **実装から生成される OpenAPI を正**としてドキュメント運用します。
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
+#### 参照先
+
+| ドキュメント | 説明 |
+|-------------|------|
+| [docs/openapi.json](./docs/openapi.json) | REST API スキーマ（サーバー起動不要） |
+| [docs/backend-openapi.md](./docs/backend-openapi.md) | REST/WebSocket API 概要 |
+| `http://localhost:8000/docs` | Swagger UI（サーバー起動時） |
+| `http://localhost:8000/redoc` | ReDoc（サーバー起動時） |
+
+#### OpenAPI スキーマの更新
+
+API を変更したら `docs/openapi.json` を更新すること:
+
+```bash
+make openapi
+```
+
+#### WebSocket プロトコル
+
+OpenAPI は WebSocket を表現できないため、**ソースコードの docstring が正**:
+
+- Stream: `backend/app/api/endpoints/stream.py`
+- Capture: `backend/app/api/endpoints/capture.py`
+
+概要は [docs/backend-openapi.md](./docs/backend-openapi.md) を参照。
 
 #### API 変更時のルール（重要）
 
@@ -227,24 +250,15 @@ API を追加/変更する場合は、FastAPI の仕組みを最大限活かし�
 - ルータには `summary` / `description` を付ける
 - `response_model` を付けてレスポンススキーマを固定する
 - `tags` で分類し、`/docs` の見通しを良くする
+- **変更後は `make openapi` を実行**
 
 #### 「自動生成されるもの」をどこに書くか
 
-OpenAPI 自動生成は「生成物（openapi.json）をリポジトリに置く」のではなく、
-**ソースコード側にドキュメント情報を埋め込む**運用にする。
+**ソースコード側にドキュメント情報を埋め込む**運用:
 
 - ルータ実装: `backend/app/api/endpoints/` に `summary` / `description` / `response_model` を書く
 - スキーマ定義: `backend/app/api/schemas/` の Pydantic `BaseModel` + `Field(...)` で説明・例を付ける
    - 例: `Field(description=..., examples=[...])`
-
-※ `openapi.json` は **実行時にオンデマンド生成**されるため、原則として Git 管理しない。
-（例外: クライアント自動生成や契約テストでスキーマを成果物扱いする場合）
-
-確認:
-
-```bash
-curl -fsS http://localhost:8000/openapi.json | head -c 200
-```
 
 ### 依存関係管理
 
