@@ -7,12 +7,10 @@
 
 ## 0. TL;DR（最重要だけ）
 
-- 変更は **1ステップずつ**。各ステップで必ず検証する（バッチ変更禁止）
-- 「カウントされる変更」以外に寄り道しない（ドリフト防止）
-- Non-negotiables を破らない
-- “直った/改善した”は **証拠（tests/metrics/diff）** が出てから言う
-- 実行は必ず **制限付き**（timeout / スコープ / リソース）
-
+- 作業開始前に [README.md](./README.md) と instructions/ 配下の `*.md` 増分を確認する
+- 変更は **1ステップずつ** 入れて、直後に必ず検証（tests/metrics）する
+- SSE/WS 等は **自動で終わる** こと（timeout / close / スコープ制限）を最優先する
+- コミットは **1コミット＝1論点**、メッセージは `type(scope): subject` を厳守する
 
 ## 2. 「カウントされる変更 / されない変更」
 
@@ -79,7 +77,36 @@
 - ベンチ：`timeout -k <k> <t> <bench command>`
 - スコープ制限：<workspace/package/target の指定方法>
 
+---
 
+## Commit message（必須ルール）
+
+### TL;DR（必ず守ること）
+
+- 変更は **1コミット＝1論点**
+- コミットメッセージは **指定フォーマット必須**
+- 実行していないテストを「実行した」と書くことは禁止
+- 秘匿情報・危険情報をコミットログに書くことは禁止
+- 詳細ルールは `instructions/git-commit.md` を参照
+
+### フォーマット
+- `type(scope): subject`
+- type は以下から選ぶ  
+  `feat | fix | refactor | perf | test | docs | chore | ci | build | revert`
+- scope は **影響範囲が特定できる名前** を入れる
+
+### 絶対禁止
+- 実行していないテスト/ベンチを「実行した」と記載すること
+- APIキー、トークン、内部URL、個人情報、顧客情報を書くこと
+- 公開すべきでない脆弱性の再現手順を書くこと
+- 複数論点を1コミットにまとめること
+
+---
+
+## テスト・証拠の基本方針
+
+- テスト結果を書く場合は **実行コマンドを明示**
+- 未実行の場合は `not run (reason: ...)` と正直に書く
 
 ---
 
@@ -107,6 +134,9 @@
 | **[docs/architecture.md](./docs/architecture.md)** | アーキテクチャ詳細 |
 | **[docs/api-reference.md](./docs/api-reference.md)** | API リファレンス |
 | **[docs/backend-openapi.md](./docs/backend-openapi.md)** | FastAPI の自動生成 API ドキュメント（/docs）の見方 |
+| **[instructions/git-commit.md](./instructions/git-commit.md)** | コミットメッセージ規約（Conventional Commits / テスト記載ルール） |
+
+**追加ルール**: 作業を始める前に `instructions/` 配下に新しい `*.md` が増えていないか必ず確認し、増えていた場合はこの表に **正しいファイル名** と **内容が分かる説明** を追記してから作業を開始すること。
 
 **重要**: 一般的なフレームワークの知識だけで推測して作業しないこと。プロジェクト固有のルールや設定を必ず確認してください。
 
