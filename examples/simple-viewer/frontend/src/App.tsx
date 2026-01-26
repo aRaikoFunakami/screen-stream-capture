@@ -71,6 +71,7 @@ function App() {
   }, [])
 
   // Capture WebSocket: keep connected while modal is open.
+  // Delay connection slightly to allow stream WS to connect first
   useEffect(() => {
     if (!selectedDevice) {
       captureWsRef.current?.close()
@@ -85,72 +86,74 @@ function App() {
     setCaptureError(null)
     pendingCaptureIdRef.current = null
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/capture/${selectedDevice}`)
-    ws.binaryType = 'arraybuffer'
+    // Delay capture WS connection to allow stream WS to establish first
+    const timeoutId = setTimeout(() => {
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/capture/${selectedDevice}`)
+      ws.binaryType = 'arraybuffer'
 
-    ws.onopen = () => {
-      setCaptureStatus('connected')
-    }
+      ws.onopen = () => {
+        setCaptureStatus('connected')
+      }
 
-    ws.onclose = () => {
-      setCaptureStatus('disconnected')
-    }
+      ws.onclose = () => {
+        setCaptureStatus('disconnected')
+      }
 
-    ws.onerror = () => {
-      setCaptureError('capture WebSocket error')
-    }
+      ws.onerror = () => {
+        setCaptureError('capture WebSocket error')
+      }
 
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        try {
-          const msg = JSON.parse(event.data)
-          if (msg.type === 'error') {
-            setCaptureError(`${msg.code ?? 'ERROR'}: ${msg.message ?? 'unknown error'}`)
-            return
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === 'error') {
+              setCaptureError(`${msg.code ?? 'ERROR'}: ${msg.message ?? 'unknown error'}`)
+              return
+            }
+            if (msg.type === 'capture_result') {
+              pendingCaptureIdRef.current = msg.capture_id
+              return
+            }
+          } catch (e) {
+            console.error('Failed to parse capture message:', e)
           }
-          if (msg.type === 'capture_result') {
-            pendingCaptureIdRef.current = msg.capture_id
-            return
-          }
-        } catch (e) {
-          console.error('Failed to parse capture message:', e)
+          return
         }
-        return
+
+        // Binary (JPEG bytes)
+        try {
+          const buf = event.data as ArrayBuffer
+          const blob = new Blob([buf], { type: 'image/jpeg' })
+          const url = URL.createObjectURL(blob)
+
+          const captureId = pendingCaptureIdRef.current ?? 'capture'
+          const ts = new Date().toISOString().replace(/[:.]/g, '')
+          const filename = `${selectedDevice}_${ts}_${captureId}.jpg`
+
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+
+          URL.revokeObjectURL(url)
+        } catch (e) {
+          console.error('Failed to handle capture binary:', e)
+        } finally {
+          pendingCaptureIdRef.current = null
+        }
       }
 
-      // Binary (JPEG bytes)
-      try {
-        const buf = event.data as ArrayBuffer
-        const blob = new Blob([buf], { type: 'image/jpeg' })
-        const url = URL.createObjectURL(blob)
-
-        const captureId = pendingCaptureIdRef.current ?? 'capture'
-        const ts = new Date().toISOString().replace(/[:.]/g, '')
-        const filename = `${selectedDevice}_${ts}_${captureId}.jpg`
-
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-
-        URL.revokeObjectURL(url)
-      } catch (e) {
-        console.error('Failed to handle capture binary:', e)
-      } finally {
-        pendingCaptureIdRef.current = null
-      }
-    }
-
-    captureWsRef.current = ws
+      captureWsRef.current = ws
+    }, 3000)  // Wait 3 seconds for stream WS to establish
 
     return () => {
-      ws.close()
-      if (captureWsRef.current === ws) {
-        captureWsRef.current = null
-      }
+      clearTimeout(timeoutId)
+      captureWsRef.current?.close()
+      captureWsRef.current = null
     }
   }, [selectedDevice])
 
