@@ -235,6 +235,7 @@ class CaptureWorker:
 
         # NOTE: ffmpeg must be installed in the runtime environment.
         # We decode continuously to rawvideo (yuv420p) and keep only the latest frame.
+        # NOTE: fps フィルタは削除。入力フレームレートをそのまま使用し、遅延を最小化する。
         args = [
             "ffmpeg",
             "-hide_banner",
@@ -243,7 +244,7 @@ class CaptureWorker:
             "-nostats",
             "-nostdin",
             "-fflags",
-            "nobuffer",
+            "+genpts+nobuffer+flush_packets",
             "-flags",
             "low_delay",
             "-probesize",
@@ -254,8 +255,6 @@ class CaptureWorker:
             "h264",
             "-i",
             "pipe:0",
-            "-vf",
-            f"fps={self._decoder_fps}",
             "-pix_fmt",
             "yuv420p",
             "-f",
@@ -304,21 +303,48 @@ class CaptureWorker:
         assert self._proc is not None
         assert self._proc.stdin is not None
 
-        session = await self._stream_manager.get_or_create(self.serial)
+        chunk_count = 0
+        total_bytes = 0
+        max_retries = 10
+        retry_delay = 2.0
 
-        try:
-            async for chunk in session.subscribe():
-                if not chunk or self._proc is None:
-                    break
-                try:
-                    self._proc.stdin.write(chunk)
-                    await self._proc.stdin.drain()
-                except (BrokenPipeError, ConnectionResetError):
-                    break
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(f"Capture feed loop error for {self.serial}: {e}")
+        logger.info(f"Capture feed loop started for {self.serial}")
+
+        for attempt in range(max_retries):
+            try:
+                # セッションを毎回取得（再起動で別インスタンスになる可能性があるため）
+                session = await self._stream_manager.get_or_create(self.serial)
+                logger.info(f"Capture feed {self.serial}: subscribed to session (attempt {attempt + 1})")
+                async for chunk in session.subscribe():
+                    if not chunk or self._proc is None:
+                        break
+                    try:
+                        self._proc.stdin.write(chunk)
+                        await self._proc.stdin.drain()
+                        chunk_count += 1
+                        total_bytes += len(chunk)
+                        if chunk_count <= 3 or chunk_count % 100 == 0:
+                            logger.info(f"Capture feed {self.serial}: chunk #{chunk_count}, size={len(chunk)}, total={total_bytes}")
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.warning(f"Capture feed {self.serial}: pipe broken after {chunk_count} chunks")
+                        return
+                # Normal exit from subscribe() iterator
+                logger.info(f"Capture feed {self.serial}: subscribe iterator ended normally after {chunk_count} chunks")
+                break
+            except asyncio.CancelledError:
+                raise
+            except (ConnectionRefusedError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Capture feed {self.serial}: connection error ({e}), retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 5.0)
+                else:
+                    logger.error(f"Capture feed loop error for {self.serial}: {e} (giving up after {max_retries} attempts)")
+            except Exception as e:
+                logger.error(f"Capture feed loop error for {self.serial}: {e}")
+                break
+
+        logger.info(f"Capture feed loop ended for {self.serial}: {chunk_count} chunks, {total_bytes} bytes")
 
     async def _read_ffmpeg_stderr_loop(self) -> None:
         assert self._proc is not None
@@ -330,7 +356,10 @@ class CaptureWorker:
                 if not line:
                     break
 
-                text = line.decode("utf-8", errors="ignore")
+                text = line.decode("utf-8", errors="ignore").rstrip()
+                # Log all ffmpeg stderr for debugging
+                logger.debug(f"ffmpeg stderr [{self.serial}]: {text}")
+                
                 # Detect resolution once, but always keep draining stderr to avoid blocking ffmpeg.
                 if self._width is None or self._height is None:
                     if "Video:" not in text:
@@ -357,14 +386,25 @@ class CaptureWorker:
         assert self._proc.stdout is not None
 
         buf = bytearray()
+        read_count = 0
+        total_bytes = 0
+        frame_count = 0
+
+        logger.info(f"Capture rawvideo loop started for {self.serial}")
 
         try:
             while True:
                 chunk = await self._proc.stdout.read(256 * 1024)
                 if not chunk:
+                    logger.warning(f"Capture rawvideo loop {self.serial}: EOF after {read_count} reads, {total_bytes} bytes")
                     break
 
+                read_count += 1
+                total_bytes += len(chunk)
                 buf.extend(chunk)
+
+                if read_count <= 3 or read_count % 100 == 0:
+                    logger.info(f"Capture rawvideo {self.serial}: read #{read_count}, chunk={len(chunk)}, total={total_bytes}, buf={len(buf)}, w={self._width}, h={self._height}")
 
                 if self._width is None or self._height is None:
                     continue
@@ -377,6 +417,7 @@ class CaptureWorker:
                 while len(buf) >= frame_size:
                     latest = bytes(buf[:frame_size])
                     del buf[:frame_size]
+                    frame_count += 1
 
                 if latest is None:
                     continue
@@ -393,11 +434,16 @@ class CaptureWorker:
                     self._latest_frame = fb
                     self._seq += 1
                     self._cond.notify_all()
+                
+                if frame_count % 30 == 1:
+                    logger.debug(f"Capture rawvideo {self.serial}: frame {frame_count} updated")
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logger.error(f"Capture rawvideo loop error for {self.serial}: {e}")
+        finally:
+            logger.info(f"Capture rawvideo loop ended for {self.serial}: {frame_count} frames")
 
 
 class CaptureManager:
