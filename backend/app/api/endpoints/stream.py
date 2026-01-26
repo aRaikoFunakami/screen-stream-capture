@@ -45,6 +45,14 @@ async def websocket_stream(websocket: WebSocket, serial: str) -> None:
                 break
             await websocket.send_bytes(chunk)
 
+        # If the session ends (e.g., upstream stopped), proactively close so
+        # clients don't hang waiting for more frames.
+        try:
+            await websocket.close(code=1000)
+        except Exception:
+            # If already closed/disconnected, ignore.
+            pass
+
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for {serial}")
     except Exception as e:
