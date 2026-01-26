@@ -6,6 +6,7 @@ React components for Android screen streaming
 
 - 🎥 H.264 video streaming via WebSocket
 - ⚡ Low latency with JMuxer
+- 🔁 Device rotation / resolution change supported (auto reset + layout follow)
 - 🔄 Auto-reconnect support
 - 📊 Built-in stats display
 - 🎨 Customizable styling
@@ -37,6 +38,11 @@ function App() {
 }
 ```
 
+Notes:
+
+- Device rotation / resolution change is handled internally. Consumers typically do not need to add any special code.
+- Layout is responsive to the stream aspect ratio; if your grid/cards show extra whitespace after rotation, adjust the app-side layout (CSS/grid rules).
+
 ### useAndroidStream Hook
 
 For more control, use the custom hook:
@@ -49,6 +55,13 @@ function CustomPlayer() {
     wsUrl: '/api/ws/stream/emulator-5554',
     autoConnect: true,
     fps: 30,
+    // 解像度変更（回転）を検出した時に呼ばれる（JMuxer リセット完了後）
+    onResolutionChange: () => {
+      const video = videoRef.current
+      if (video?.videoWidth && video?.videoHeight) {
+        video.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`
+      }
+    },
   })
 
   return (
@@ -68,7 +81,7 @@ function CustomPlayer() {
 ### H264PlayerProps
 
 | Prop | Type | Default | Description |
-|------|------|---------|-------------|
+| ---- | ---- | ------- | ----------- |
 | `wsUrl` | `string` | required | WebSocket URL for the stream |
 | `className` | `string` | `''` | CSS class name |
 | `fps` | `number` | `30` | Frame rate for JMuxer |
@@ -81,7 +94,7 @@ function CustomPlayer() {
 ### useAndroidStreamOptions
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| ------ | ---- | ------- | ----------- |
 | `wsUrl` | `string` | required | WebSocket URL |
 | `autoConnect` | `boolean` | `true` | Connect automatically |
 | `fps` | `number` | `30` | Frame rate for JMuxer |
@@ -92,7 +105,7 @@ function CustomPlayer() {
 ### useAndroidStreamResult
 
 | Property | Type | Description |
-|----------|------|-------------|
+| -------- | ---- | ----------- |
 | `videoRef` | `RefObject<HTMLVideoElement>` | Ref for the video element |
 | `status` | `StreamStatus` | Connection status |
 | `stats` | `StreamStats` | Stream statistics |

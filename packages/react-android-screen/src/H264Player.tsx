@@ -2,7 +2,7 @@
  * H264Player - H.264 ストリーミングプレイヤーコンポーネント
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { useAndroidStream } from './useAndroidStream'
 import type { H264PlayerFit, H264PlayerProps, StreamStatus } from './types'
 
@@ -77,6 +77,20 @@ export function H264Player({
   const isUnmountedRef = useRef(false)
   const hasConnectedOnceRef = useRef(false)
   const connectRef = useRef<() => void>(() => {})
+  const [aspectRatio, setAspectRatio] = useState<string | null>(null)
+
+  const updateAspectRatioFromVideo = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const { videoWidth, videoHeight } = video
+    if (videoWidth > 0 && videoHeight > 0) {
+      const ratio = `${videoWidth} / ${videoHeight}`
+      // video の intrinsic size 変更に追従できるよう、video と wrapper 両方へ反映
+      video.style.aspectRatio = ratio
+      setAspectRatio(ratio)
+    }
+  }, [])
 
   const { videoRef, status, stats, connect, disconnect } = useAndroidStream({
     wsUrl,
@@ -88,6 +102,10 @@ export function H264Player({
     },
     onDisconnected,
     onError,
+    // JMuxer のリセット完了後に呼ばれるので、ここでレイアウト更新を促す
+    onResolutionChange: () => {
+      updateAspectRatioFromVideo()
+    },
   })
 
   // connect を ref に保存して依存配列の問題を回避
@@ -137,20 +155,22 @@ export function H264Player({
       const { videoWidth, videoHeight } = video
       if (videoWidth > 0 && videoHeight > 0) {
         console.log(`H264Player: Video resolution changed to ${videoWidth}x${videoHeight}`)
-        // 強制的にスタイルを更新してレイアウトをトリガー
-        video.style.aspectRatio = `${videoWidth} / ${videoHeight}`
       }
+      updateAspectRatioFromVideo()
     }
 
     // loadedmetadata と resize イベントを監視
     video.addEventListener('loadedmetadata', handleResize)
     video.addEventListener('resize', handleResize)
 
+    // 既に metadata が揃っているケースもあるので初回も試行
+    handleResize()
+
     return () => {
       video.removeEventListener('loadedmetadata', handleResize)
       video.removeEventListener('resize', handleResize)
     }
-  }, [videoRef])
+  }, [videoRef, updateAspectRatioFromVideo])
 
   const resolvedFit: H264PlayerFit = fit
   const resolvedVideoStyle: React.CSSProperties = {
@@ -165,6 +185,7 @@ export function H264Player({
   return (
     <div 
       className={`relative bg-black rounded-lg overflow-hidden ${className}`}
+      style={aspectRatio ? { aspectRatio } : undefined}
     >
       <video
         ref={videoRef}
