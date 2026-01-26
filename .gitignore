@@ -76,3 +76,5 @@ scrcpy/
 examples/*/backend/.venv/
 examples/*/frontend/node_modules/
 examples/*/frontend/dist/
+
+backend/captures/
