@@ -1,4 +1,4 @@
-.PHONY: setup up down rebuild logs shell-backend download-scrcpy-server clean help
+.PHONY: setup up down rebuild logs shell-backend download-scrcpy-server clean help openapi
 
 # scrcpy-server のバージョンとURL
 SCRCPY_VERSION := 3.3.4
@@ -19,6 +19,7 @@ help:
 	@echo "  rebuild         完全再構築（イメージ削除 + 再ビルド + 起動）"
 	@echo "  logs            ログ表示"
 	@echo "  shell-backend   バックエンドコンテナにシェル接続"
+	@echo "  openapi         OpenAPI スキーマを docs/openapi.json に出力"
 	@echo "  clean           生成物を削除"
 	@echo ""
 
@@ -81,6 +82,12 @@ logs:
 # バックエンドシェル
 shell-backend:
 	docker compose exec backend /bin/bash
+
+# OpenAPI スキーマ出力
+openapi:
+	@echo "=== Exporting OpenAPI schema ==="
+	cd backend && uv run python scripts/export_openapi.py
+	@echo ""
 
 # クリーンアップ
 clean:

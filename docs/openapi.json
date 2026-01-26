@@ -1,0 +1,356 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Screen Stream Capture",
+    "description": "Android デバイス画面ストリーミング & キャプチャシステム",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health check",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthzResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "List connected devices",
+        "operationId": "list_devices_api_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Device"
+                  },
+                  "type": "array",
+                  "title": "Response List Devices Api Devices Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{serial}": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Get device info",
+        "operationId": "get_device_api_devices__serial__get",
+        "parameters": [
+          {
+            "name": "serial",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Serial"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Device change events (SSE)",
+        "description": "Server-Sent Events endpoint.\n\n- `event: devices` でデバイス一覧を配信\n- 接続直後に現在の一覧を1回送信し、その後は変更時に通知",
+        "operationId": "events_api_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List active stream sessions",
+        "operationId": "list_sessions_api_sessions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Device": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial",
+            "description": "ADB device serial"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DeviceState",
+            "description": "Connection state"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Device model"
+          },
+          "manufacturer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer",
+            "description": "Device manufacturer"
+          },
+          "isEmulator": {
+            "type": "boolean",
+            "title": "Isemulator",
+            "description": "Whether this is an emulator"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Lastseen",
+            "description": "Last time the device was seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "state",
+          "isEmulator",
+          "lastSeen"
+        ],
+        "title": "Device",
+        "description": "Device info returned by the backend API."
+      },
+      "DeviceState": {
+        "type": "string",
+        "enum": [
+          "device",
+          "offline",
+          "unauthorized",
+          "connecting",
+          "unknown"
+        ],
+        "title": "DeviceState",
+        "description": "Device connection state as exposed via API."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthzResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthzResponse"
+      },
+      "SessionInfo": {
+        "properties": {
+          "serial": {
+            "type": "string",
+            "title": "Serial"
+          },
+          "stream_running": {
+            "type": "boolean",
+            "title": "Stream Running"
+          },
+          "stream_subscribers": {
+            "type": "integer",
+            "title": "Stream Subscribers"
+          },
+          "stream_clients": {
+            "type": "integer",
+            "title": "Stream Clients"
+          },
+          "capture_clients": {
+            "type": "integer",
+            "title": "Capture Clients"
+          },
+          "capture_running": {
+            "type": "boolean",
+            "title": "Capture Running"
+          }
+        },
+        "type": "object",
+        "required": [
+          "serial",
+          "stream_running",
+          "stream_subscribers",
+          "stream_clients",
+          "capture_clients",
+          "capture_running"
+        ],
+        "title": "SessionInfo"
+      },
+      "SessionsResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionInfo"
+            },
+            "type": "array",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "title": "SessionsResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Health check"
+    },
+    {
+      "name": "devices",
+      "description": "Device discovery"
+    },
+    {
+      "name": "events",
+      "description": "SSE events"
+    },
+    {
+      "name": "sessions",
+      "description": "Stream session management"
+    },
+    {
+      "name": "stream",
+      "description": "WebSocket H.264 streaming"
+    },
+    {
+      "name": "capture",
+      "description": "WebSocket JPEG capture"
+    }
+  ]
+}

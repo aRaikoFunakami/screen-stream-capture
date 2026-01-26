@@ -87,7 +87,13 @@ make setup
 
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-- OpenAPI: http://localhost:8000/openapi.json
+- OpenAPI JSON: [docs/openapi.json](docs/openapi.json)（サーバー起動不要）
+
+OpenAPI スキーマを更新するには：
+
+```bash
+make openapi
+```
 
 ### コマンド一覧
 
@@ -98,6 +104,7 @@ make setup
 | `make down` | Docker 終了 |
 | `make rebuild` | 完全再構築 |
 | `make logs` | ログ表示 |
+| `make openapi` | OpenAPI スキーマ出力 |
 | `make help` | ヘルプ表示 |
 
 ## ライブラリとして使う
