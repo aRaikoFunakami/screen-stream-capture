@@ -181,6 +181,7 @@ screen-stream-capture/
 - [アーキテクチャ詳細](docs/architecture.md)
 - [Backend API（FastAPI / OpenAPI）](docs/backend-openapi.md)
 - [途中参加（late join）で白画面になる問題と解決策](docs/late-join.md)
+- [画面回転（縦/横）に Web 表示を追従させるノウハウ](docs/screen-rotation.md)
 
 ## 技術スタック
 
