@@ -4,7 +4,7 @@
 
 import { useRef, useEffect } from 'react'
 import { useAndroidStream } from './useAndroidStream'
-import type { H264PlayerProps, StreamStatus } from './types'
+import type { H264PlayerFit, H264PlayerProps, StreamStatus } from './types'
 
 /**
  * バイト数を人間が読める形式にフォーマット
@@ -62,6 +62,10 @@ function getStatusLabel(status: StreamStatus): string {
 export function H264Player({
   wsUrl,
   className = '',
+  videoClassName = '',
+  videoStyle,
+  fit = 'contain',
+  maxHeight = '70vh',
   onConnected,
   onDisconnected,
   onError,
@@ -148,6 +152,16 @@ export function H264Player({
     }
   }, [videoRef])
 
+  const resolvedFit: H264PlayerFit = fit
+  const resolvedVideoStyle: React.CSSProperties = {
+    width: '100%',
+    height: 'auto',
+    maxHeight,
+    display: 'block',
+    objectFit: resolvedFit,
+    ...videoStyle,
+  }
+
   return (
     <div 
       className={`relative bg-black rounded-lg overflow-hidden ${className}`}
@@ -157,13 +171,8 @@ export function H264Player({
         autoPlay
         muted
         playsInline
-        style={{ 
-          width: '100%',
-          height: 'auto',
-          maxHeight: '70vh',
-          display: 'block',
-          objectFit: 'contain',
-        }}
+        className={videoClassName}
+        style={resolvedVideoStyle}
       />
       
       {/* ステータスオーバーレイ */}

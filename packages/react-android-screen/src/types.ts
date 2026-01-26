@@ -18,6 +18,11 @@ export interface StreamStats {
 }
 
 /**
+ * H264Player の表示フィットモード（CSS object-fit）
+ */
+export type H264PlayerFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'
+
+/**
  * H264Player コンポーネントの Props
  */
 export interface H264PlayerProps {
@@ -25,6 +30,14 @@ export interface H264PlayerProps {
   wsUrl: string
   /** CSS クラス名 */
   className?: string
+  /** video 要素に付与する CSS クラス名 */
+  videoClassName?: string
+  /** video 要素の style（デフォルトの style を上書き可能） */
+  videoStyle?: React.CSSProperties
+  /** 画像のフィット（CSS object-fit、デフォルト: contain） */
+  fit?: H264PlayerFit
+  /** video の最大高さ（デフォルト: 70vh）。例: '100%', '70vh' */
+  maxHeight?: string
   /** 接続時のコールバック */
   onConnected?: () => void
   /** 切断時のコールバック */
