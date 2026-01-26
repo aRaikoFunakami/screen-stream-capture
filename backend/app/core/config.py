@@ -17,6 +17,8 @@ class Settings:
     scrcpy_server_jar: str
     cors_allow_origins: list[str]
     capture_output_dir: str
+    capture_jpeg_quality: int
+    stream_idle_timeout_sec: float
 
 
 def load_settings() -> Settings:
@@ -32,8 +34,18 @@ def load_settings() -> Settings:
     # persist on the host without extra volume config.
     capture_output_dir = os.environ.get("CAPTURE_OUTPUT_DIR", "captures")
 
+    capture_jpeg_quality = int(os.environ.get("CAPTURE_JPEG_QUALITY", "80"))
+    if capture_jpeg_quality < 1:
+        capture_jpeg_quality = 1
+    if capture_jpeg_quality > 100:
+        capture_jpeg_quality = 100
+
+    stream_idle_timeout_sec = float(os.environ.get("STREAM_IDLE_TIMEOUT_SEC", "5"))
+
     return Settings(
         scrcpy_server_jar=scrcpy_server_jar,
         cors_allow_origins=cors_allow_origins,
         capture_output_dir=capture_output_dir,
+        capture_jpeg_quality=capture_jpeg_quality,
+        stream_idle_timeout_sec=stream_idle_timeout_sec,
     )

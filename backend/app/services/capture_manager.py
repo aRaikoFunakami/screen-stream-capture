@@ -5,13 +5,9 @@ work/multi_device_stream_and_capture/plan.md.
 
 - A capture client connects to `WS /api/ws/capture/{serial}`.
 - While at least one capture client is connected for a device, the backend keeps a
-  decoder running (ffmpeg) and continuously updates the latest JPEG in memory.
-- On a capture request, the backend immediately returns the latest JPEG bytes.
-
-Implementation note:
-- We use an ffmpeg process that takes raw H.264 (Annex B) on stdin and outputs a
-  continuous MJPEG stream on stdout. We parse JPEG SOI/EOI markers to extract
-  individual JPEG images.
+    decoder running (ffmpeg) and continuously updates the latest decoded frame in memory.
+- On a capture request, the backend encodes that latest frame to JPEG and returns
+    the JPEG bytes.
 """
 
 from __future__ import annotations
@@ -19,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,51 +28,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _extract_complete_jpegs(buf: bytearray) -> list[bytes]:
-    """Extract complete JPEG frames from an MJPEG byte buffer.
-
-    The function mutates `buf` in-place, removing consumed bytes and returning a
-    list of complete JPEG images (each includes SOI/EOI markers).
-    """
-
-    frames: list[bytes] = []
-
-    while True:
-        start = buf.find(b"\xff\xd8")
-        if start < 0:
-            # Keep the tail in case we split the marker.
-            if len(buf) > 2:
-                del buf[:-2]
-            break
-
-        end = buf.find(b"\xff\xd9", start + 2)
-        if end < 0:
-            # Keep from SOI.
-            if start > 0:
-                del buf[:start]
-            break
-
-        frames.append(bytes(buf[start : end + 2]))
-        del buf[: end + 2]
-
-    return frames
+_RE_DIM = re.compile(r"(?P<w>\d{2,5})x(?P<h>\d{2,5})")
 
 
 def _quality_percent_to_mjpeg_qscale(quality: int) -> int:
-    """Map a 1-100 quality percent to ffmpeg mjpeg qscale (2-31).
-
-    ffmpeg MJPEG uses `-q:v` as a *quality scale* where smaller is better.
-    We accept a more familiar 1..100 (larger is better) and convert.
-    """
+    """Map a 1-100 quality percent to ffmpeg mjpeg qscale (2-31)."""
 
     q = int(quality)
     if q < 1:
         q = 1
     if q > 100:
         q = 100
-
     # 1 -> 31 (worst), 100 -> 2 (best)
     return int(round(31 - (q - 1) * (29 / 99)))
+
+
+def _yuv420p_frame_size(width: int, height: int) -> int:
+    return (width * height * 3) // 2
 
 
 @dataclass(frozen=True)
@@ -85,8 +54,19 @@ class CaptureResult:
     capture_id: str
     captured_at: str
     serial: str
+    width: int
+    height: int
     bytes: int
     path: Optional[str]
+
+
+@dataclass(frozen=True)
+class FrameBuffer:
+    width: int
+    height: int
+    pix_fmt: str
+    captured_at: str
+    data: bytes
 
 
 class CaptureWorker:
@@ -105,7 +85,8 @@ class CaptureWorker:
         self._default_quality = default_quality
         self._decoder_fps = decoder_fps
 
-        self._mjpeg_qscale = _quality_percent_to_mjpeg_qscale(self._default_quality)
+        self._width: int | None = None
+        self._height: int | None = None
 
         self._refcount = 0
         self._ref_lock = asyncio.Lock()
@@ -113,9 +94,10 @@ class CaptureWorker:
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._task_feed: Optional[asyncio.Task[None]] = None
         self._task_read: Optional[asyncio.Task[None]] = None
+        self._task_stderr: Optional[asyncio.Task[None]] = None
 
         self._seq = 0
-        self._latest_jpeg: Optional[bytes] = None
+        self._latest_frame: Optional[FrameBuffer] = None
         self._cond = asyncio.Condition()
 
         self._encode_sem = asyncio.Semaphore(1)
@@ -143,13 +125,12 @@ class CaptureWorker:
     async def capture_jpeg(self, *, quality: Optional[int], save: bool) -> tuple[CaptureResult, bytes]:
         """Return a JPEG image (bytes) and its metadata."""
 
-        # NOTE: In this initial implementation the worker produces a continuous MJPEG
-        # stream at a fixed quality. We accept `quality` for forward compatibility.
-        if quality is not None:
-            _quality_percent_to_mjpeg_qscale(int(quality))
+        quality_percent = int(quality) if quality is not None else int(self._default_quality)
+        qscale = _quality_percent_to_mjpeg_qscale(quality_percent)
 
         async with self._encode_sem:
-            jpeg = await self._get_latest_jpeg(timeout_sec=5.0)
+            frame = await self._get_latest_frame(timeout_sec=5.0)
+            jpeg = await self._encode_jpeg_with_ffmpeg(frame, qscale=qscale)
 
             capture_id = str(uuid4())
             captured_at = datetime.now(timezone.utc).isoformat()
@@ -163,6 +144,8 @@ class CaptureWorker:
                     capture_id=capture_id,
                     captured_at=captured_at,
                     serial=self.serial,
+                    width=frame.width,
+                    height=frame.height,
                     bytes=len(jpeg),
                     path=path,
                 ),
@@ -182,21 +165,67 @@ class CaptureWorker:
 
         return str(file_path)
 
-    async def _get_latest_jpeg(self, *, timeout_sec: float) -> bytes:
+    async def _get_latest_frame(self, *, timeout_sec: float) -> FrameBuffer:
         async with self._cond:
-            if self._latest_jpeg is not None:
-                # For "任意タイミング" semantics, try to wait for one newer frame.
+            if self._latest_frame is not None:
                 before = self._seq
                 try:
                     await asyncio.wait_for(self._cond.wait_for(lambda: self._seq > before), timeout=0.5)
                 except TimeoutError:
                     pass
-                if self._latest_jpeg is not None:
-                    return self._latest_jpeg
+                if self._latest_frame is not None:
+                    return self._latest_frame
 
-            await asyncio.wait_for(self._cond.wait_for(lambda: self._latest_jpeg is not None), timeout=timeout_sec)
-            assert self._latest_jpeg is not None
-            return self._latest_jpeg
+            await asyncio.wait_for(self._cond.wait_for(lambda: self._latest_frame is not None), timeout=timeout_sec)
+            assert self._latest_frame is not None
+            return self._latest_frame
+
+    async def _encode_jpeg_with_ffmpeg(self, frame: FrameBuffer, *, qscale: int) -> bytes:
+        """Encode a single YUV420P frame to JPEG using ffmpeg (on-demand)."""
+
+        args = [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            frame.pix_fmt,
+            "-s",
+            f"{frame.width}x{frame.height}",
+            "-i",
+            "pipe:0",
+            "-frames:v",
+            "1",
+            "-f",
+            "mjpeg",
+            "-q:v",
+            str(qscale),
+            "pipe:1",
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+
+        proc.stdin.write(frame.data)
+        await proc.stdin.drain()
+        proc.stdin.close()
+
+        jpeg = await proc.stdout.read()
+        with contextlib.suppress(Exception):
+            await proc.wait()
+
+        if not jpeg.startswith(b"\xff\xd8"):
+            raise RuntimeError("Failed to encode JPEG")
+        return jpeg
 
     async def _start_decoder(self) -> None:
         if self._proc is not None:
@@ -205,11 +234,13 @@ class CaptureWorker:
         logger.info(f"Starting capture decoder for {self.serial}")
 
         # NOTE: ffmpeg must be installed in the runtime environment.
-        # We output MJPEG frames continuously; JPEG boundaries are detected by SOI/EOI markers.
+        # We decode continuously to rawvideo (yuv420p) and keep only the latest frame.
         args = [
             "ffmpeg",
+            "-hide_banner",
             "-loglevel",
-            "error",
+            "info",
+            "-nostats",
             "-nostdin",
             "-fflags",
             "nobuffer",
@@ -225,10 +256,10 @@ class CaptureWorker:
             "pipe:0",
             "-vf",
             f"fps={self._decoder_fps}",
+            "-pix_fmt",
+            "yuv420p",
             "-f",
-            "mjpeg",
-            "-q:v",
-            str(self._mjpeg_qscale),
+            "rawvideo",
             "pipe:1",
         ]
 
@@ -240,7 +271,8 @@ class CaptureWorker:
         )
 
         self._task_feed = asyncio.create_task(self._feed_h264_loop(), name=f"capture-feed-{self.serial}")
-        self._task_read = asyncio.create_task(self._read_mjpeg_loop(), name=f"capture-read-{self.serial}")
+        self._task_read = asyncio.create_task(self._read_rawvideo_loop(), name=f"capture-read-{self.serial}")
+        self._task_stderr = asyncio.create_task(self._read_ffmpeg_stderr_loop(), name=f"capture-stderr-{self.serial}")
 
     async def _stop_decoder(self) -> None:
         if self._proc is None:
@@ -248,7 +280,7 @@ class CaptureWorker:
 
         logger.info(f"Stopping capture decoder for {self.serial}")
 
-        for task in (self._task_feed, self._task_read):
+        for task in (self._task_feed, self._task_read, self._task_stderr):
             if task is not None:
                 task.cancel()
 
@@ -266,6 +298,7 @@ class CaptureWorker:
         self._proc = None
         self._task_feed = None
         self._task_read = None
+        self._task_stderr = None
 
     async def _feed_h264_loop(self) -> None:
         assert self._proc is not None
@@ -287,7 +320,39 @@ class CaptureWorker:
         except Exception as e:
             logger.error(f"Capture feed loop error for {self.serial}: {e}")
 
-    async def _read_mjpeg_loop(self) -> None:
+    async def _read_ffmpeg_stderr_loop(self) -> None:
+        assert self._proc is not None
+        assert self._proc.stderr is not None
+
+        try:
+            while True:
+                line = await self._proc.stderr.readline()
+                if not line:
+                    break
+
+                text = line.decode("utf-8", errors="ignore")
+                # Detect resolution once, but always keep draining stderr to avoid blocking ffmpeg.
+                if self._width is None or self._height is None:
+                    if "Video:" not in text:
+                        continue
+                    m = _RE_DIM.search(text)
+                    if not m:
+                        continue
+
+                    w = int(m.group("w"))
+                    h = int(m.group("h"))
+                    if w <= 0 or h <= 0:
+                        continue
+
+                    self._width = w
+                    self._height = h
+                    logger.info(f"Capture decoder resolution for {self.serial}: {w}x{h}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Capture stderr loop error for {self.serial}: {e}")
+
+    async def _read_rawvideo_loop(self) -> None:
         assert self._proc is not None
         assert self._proc.stdout is not None
 
@@ -295,22 +360,44 @@ class CaptureWorker:
 
         try:
             while True:
-                chunk = await self._proc.stdout.read(64 * 1024)
+                chunk = await self._proc.stdout.read(256 * 1024)
                 if not chunk:
                     break
 
                 buf.extend(chunk)
 
-                for frame in _extract_complete_jpegs(buf):
-                    async with self._cond:
-                        self._latest_jpeg = frame
-                        self._seq += 1
-                        self._cond.notify_all()
+                if self._width is None or self._height is None:
+                    continue
+                frame_size = _yuv420p_frame_size(self._width, self._height)
+                if frame_size <= 0:
+                    continue
+
+                # Consume complete frames; keep only latest.
+                latest: bytes | None = None
+                while len(buf) >= frame_size:
+                    latest = bytes(buf[:frame_size])
+                    del buf[:frame_size]
+
+                if latest is None:
+                    continue
+
+                fb = FrameBuffer(
+                    width=self._width,
+                    height=self._height,
+                    pix_fmt="yuv420p",
+                    captured_at=datetime.now(timezone.utc).isoformat(),
+                    data=latest,
+                )
+
+                async with self._cond:
+                    self._latest_frame = fb
+                    self._seq += 1
+                    self._cond.notify_all()
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.error(f"Capture read loop error for {self.serial}: {e}")
+            logger.error(f"Capture rawvideo loop error for {self.serial}: {e}")
 
 
 class CaptureManager:
@@ -321,9 +408,11 @@ class CaptureManager:
         *,
         stream_manager: "StreamManager",
         output_dir: str,
+        default_quality: int = 80,
     ) -> None:
         self._stream_manager = stream_manager
         self._output_dir = output_dir
+        self._default_quality = int(default_quality)
 
         self._workers: dict[str, CaptureWorker] = {}
         self._lock = asyncio.Lock()
@@ -336,6 +425,7 @@ class CaptureManager:
                     serial,
                     stream_manager=self._stream_manager,
                     output_dir=self._output_dir,
+                    default_quality=self._default_quality,
                 )
                 self._workers[serial] = worker
             return worker
@@ -371,14 +461,34 @@ class CaptureManager:
                 while worker.refcount > 0:
                     await worker.release()
 
+    async def snapshot_running(self) -> dict[str, bool]:
+        """Return a mapping of serial -> capture decoder running."""
+
+        async with self._lock:
+            workers = dict(self._workers)
+
+        result: dict[str, bool] = {}
+        for serial, worker in workers.items():
+            result[serial] = bool(worker.refcount > 0)
+        return result
+
 
 _capture_manager: Optional[CaptureManager] = None
 
 
-def get_capture_manager(*, stream_manager: "StreamManager", output_dir: str) -> CaptureManager:
+def get_capture_manager(
+    *,
+    stream_manager: "StreamManager",
+    output_dir: str,
+    default_quality: int = 80,
+) -> CaptureManager:
     """CaptureManager のシングルトンインスタンスを取得"""
 
     global _capture_manager
     if _capture_manager is None:
-        _capture_manager = CaptureManager(stream_manager=stream_manager, output_dir=output_dir)
+        _capture_manager = CaptureManager(
+            stream_manager=stream_manager,
+            output_dir=output_dir,
+            default_quality=default_quality,
+        )
     return _capture_manager

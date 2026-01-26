@@ -27,6 +27,7 @@ from app.core.logging import configure_logging
 from app.services.capture_manager import get_capture_manager
 from app.services.device_manager import get_device_manager
 from app.services.sse_manager import get_sse_manager
+from app.services.worker_registry import get_worker_registry
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,12 @@ async def lifespan(app: FastAPI):
     app.state.capture_manager = get_capture_manager(
         stream_manager=app.state.stream_manager,
         output_dir=settings.capture_output_dir,
+        default_quality=settings.capture_jpeg_quality,
+    )
+
+    app.state.worker_registry = get_worker_registry(
+        stream_manager=app.state.stream_manager,
+        idle_timeout_sec=settings.stream_idle_timeout_sec,
     )
 
     yield

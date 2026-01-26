@@ -19,6 +19,11 @@
 
 キャプチャ画像の保存先は環境変数 `CAPTURE_OUTPUT_DIR` で指定できます（未指定時は `captures/`）。
 
+キャプチャのデフォルト品質は `CAPTURE_JPEG_QUALITY`（1〜100、未指定時は 80）で調整できます。
+セッションのアイドル停止は `STREAM_IDLE_TIMEOUT_SEC`（秒、未指定時は 5）です。
+
+`GET /api/sessions` はセッション一覧に加えて、stream/capture の接続数などの状態も返します。
+
 ## OpenAPI の保存（任意）
 
 ```bash

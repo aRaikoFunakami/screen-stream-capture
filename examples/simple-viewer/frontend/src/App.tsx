@@ -18,6 +18,13 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
+  const captureWsRef = useRef<WebSocket | null>(null)
+  const [captureStatus, setCaptureStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
+  const [captureError, setCaptureError] = useState<string | null>(null)
+  const [captureQuality, setCaptureQuality] = useState<number>(80)
+  const [captureSaveOnServer, setCaptureSaveOnServer] = useState<boolean>(false)
+  const pendingCaptureIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     // 初期データ取得
     fetch('/api/healthz')
@@ -62,6 +69,90 @@ function App() {
       eventSourceRef.current?.close()
     }
   }, [])
+
+  // Capture WebSocket: keep connected while modal is open.
+  useEffect(() => {
+    if (!selectedDevice) {
+      captureWsRef.current?.close()
+      captureWsRef.current = null
+      setCaptureStatus('disconnected')
+      setCaptureError(null)
+      pendingCaptureIdRef.current = null
+      return
+    }
+
+    setCaptureStatus('connecting')
+    setCaptureError(null)
+    pendingCaptureIdRef.current = null
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/capture/${selectedDevice}`)
+    ws.binaryType = 'arraybuffer'
+
+    ws.onopen = () => {
+      setCaptureStatus('connected')
+    }
+
+    ws.onclose = () => {
+      setCaptureStatus('disconnected')
+    }
+
+    ws.onerror = () => {
+      setCaptureError('capture WebSocket error')
+    }
+
+    ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === 'error') {
+            setCaptureError(`${msg.code ?? 'ERROR'}: ${msg.message ?? 'unknown error'}`)
+            return
+          }
+          if (msg.type === 'capture_result') {
+            pendingCaptureIdRef.current = msg.capture_id
+            return
+          }
+        } catch (e) {
+          console.error('Failed to parse capture message:', e)
+        }
+        return
+      }
+
+      // Binary (JPEG bytes)
+      try {
+        const buf = event.data as ArrayBuffer
+        const blob = new Blob([buf], { type: 'image/jpeg' })
+        const url = URL.createObjectURL(blob)
+
+        const captureId = pendingCaptureIdRef.current ?? 'capture'
+        const ts = new Date().toISOString().replace(/[:.]/g, '')
+        const filename = `${selectedDevice}_${ts}_${captureId}.jpg`
+
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+
+        URL.revokeObjectURL(url)
+      } catch (e) {
+        console.error('Failed to handle capture binary:', e)
+      } finally {
+        pendingCaptureIdRef.current = null
+      }
+    }
+
+    captureWsRef.current = ws
+
+    return () => {
+      ws.close()
+      if (captureWsRef.current === ws) {
+        captureWsRef.current = null
+      }
+    }
+  }, [selectedDevice])
 
   const getStateColor = (state: string) => {
     switch (state) {
@@ -189,7 +280,27 @@ function App() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">{selectedDevice}</h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold">{selectedDevice}</h3>
+                <div className="flex items-center gap-2 text-sm">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      captureStatus === 'connected'
+                        ? 'bg-green-500'
+                        : captureStatus === 'connecting'
+                        ? 'bg-yellow-500 animate-pulse'
+                        : 'bg-gray-400'
+                    }`}
+                  />
+                  <span className="text-gray-600">
+                    {captureStatus === 'connected'
+                      ? 'キャプチャ接続中'
+                      : captureStatus === 'connecting'
+                      ? 'キャプチャ接続中...'
+                      : 'キャプチャ未接続'}
+                  </span>
+                </div>
+              </div>
               <button
                 onClick={() => setSelectedDevice(null)}
                 className="text-gray-500 hover:text-gray-700 text-2xl"
@@ -198,10 +309,64 @@ function App() {
               </button>
             </div>
             <div className="p-4">
+              {captureError && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                  キャプチャエラー: {captureError}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-4 mb-4">
+                <button
+                  onClick={() => {
+                    const ws = captureWsRef.current
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                      setCaptureError('capture WebSocket is not connected')
+                      return
+                    }
+                    setCaptureError(null)
+                    ws.send(
+                      JSON.stringify({
+                        type: 'capture',
+                        format: 'jpeg',
+                        quality: captureQuality,
+                        save: captureSaveOnServer,
+                      })
+                    )
+                  }}
+                  disabled={captureStatus !== 'connected'}
+                  className={`px-4 py-2 rounded text-white ${
+                    captureStatus === 'connected' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  キャプチャ（JPEG）
+                </button>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span>品質</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={captureQuality}
+                    onChange={(e) => setCaptureQuality(Number(e.target.value))}
+                    className="border rounded px-2 py-1 w-20"
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={captureSaveOnServer}
+                    onChange={(e) => setCaptureSaveOnServer(e.target.checked)}
+                  />
+                  サーバーにも保存
+                </label>
+              </div>
+
               <H264Player
                 wsUrl={`/api/ws/stream/${selectedDevice}`}
                 className="w-full"
-                onError={(error) => console.error('Player error:', error)}
+                onError={(error: string) => console.error('Player error:', error)}
                 onConnected={() => console.log('Stream connected')}
                 onDisconnected={() => console.log('Stream disconnected')}
               />

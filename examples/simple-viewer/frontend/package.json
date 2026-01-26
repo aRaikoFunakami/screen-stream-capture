@@ -11,7 +11,7 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-android-screen": "file:../../packages/react-android-screen"
+    "react-android-screen": "file:../../../packages/react-android-screen"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

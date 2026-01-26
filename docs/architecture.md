@@ -213,6 +213,25 @@ const { videoRef, status, stats, connect, disconnect } = useAndroidStream({
 return <video ref={videoRef} autoPlay muted />
 ```
 
+### 7. JPEG Capture（Backend / WebSocket）
+
+動画視聴とは別に、サーバー側で任意タイミングのJPEGキャプチャを取得できます。
+
+- エンドポイント: `WS /api/ws/capture/{serial}`
+- 方式: **WS 接続中だけ** FFmpeg を起動して H.264 を復号し、最新フレーム（latest-only）を保持
+- `capture` 要求時: 最新フレームを JPEG にエンコードし、**JPEGバイナリ**を返却（必要ならサーバーにも保存）
+
+プロトコル（最小）:
+
+- client → server (text JSON): `{"type":"capture","format":"jpeg","quality":80,"save":true}`
+- server → client (text JSON): `{"type":"capture_result",...}`
+- server → client (binary): JPEG bytes
+
+ポイント:
+
+- デバイスごとにキャプチャ用デコーダは1つ（複数クライアントで共有）
+- JPEGエンコードは要求時のみ（配信（stream WS）経路をブロックしない）
+
 ---
 
 ## 技術選定の理由

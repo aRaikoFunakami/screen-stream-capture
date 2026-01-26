@@ -32,6 +32,8 @@ def _as_capture_result_dict(result: Any) -> dict[str, Any]:
         "capture_id": result.capture_id,
         "captured_at": result.captured_at,
         "serial": result.serial,
+        "width": result.width,
+        "height": result.height,
         "bytes": result.bytes,
         "path": result.path,
     }
@@ -49,6 +51,8 @@ async def websocket_capture(websocket: WebSocket, serial: str) -> None:
         await websocket.close(code=1011, reason="Server not ready")
         return
 
+    worker_registry = getattr(app.state, "worker_registry", None) if app else None
+
     device_manager = get_device_manager()
     device = await device_manager.get_device(serial)
     if device is None:
@@ -56,6 +60,8 @@ async def websocket_capture(websocket: WebSocket, serial: str) -> None:
         return
 
     worker = await capture_manager.acquire(serial)
+    if worker_registry:
+        await worker_registry.on_capture_connect(serial)
     logger.info(f"WebSocket capture started for {serial}")
 
     try:
@@ -112,4 +118,6 @@ async def websocket_capture(websocket: WebSocket, serial: str) -> None:
 
     finally:
         await capture_manager.release(serial)
+        if worker_registry:
+            await worker_registry.on_capture_disconnect(serial)
         logger.info(f"WebSocket capture ended for {serial}")

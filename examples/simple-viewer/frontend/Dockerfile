@@ -12,7 +12,7 @@ COPY examples/simple-viewer/frontend /app/frontend
 WORKDIR /app/frontend
 
 # Docker 内でのパスに合わせて package.json を修正してからインストール
-RUN sed -i 's|file:../../packages/react-android-screen|file:/app/packages/react-android-screen|g' package.json && npm install
+RUN sed -i 's|file:../../../packages/react-android-screen|file:/app/packages/react-android-screen|g' package.json && npm install
 
 EXPOSE 5173
 

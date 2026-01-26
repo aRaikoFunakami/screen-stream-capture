@@ -25,6 +25,8 @@ async def websocket_stream(websocket: WebSocket, serial: str) -> None:
         await websocket.close(code=1011, reason="Server not ready")
         return
 
+    worker_registry = getattr(app.state, "worker_registry", None) if app else None
+
     device_manager = get_device_manager()
     device = await device_manager.get_device(serial)
     if device is None:
@@ -32,6 +34,9 @@ async def websocket_stream(websocket: WebSocket, serial: str) -> None:
         return
 
     logger.info(f"WebSocket H.264 stream started for {serial}")
+
+    if worker_registry:
+        await worker_registry.on_stream_connect(serial)
 
     try:
         session = await stream_manager.get_or_create(serial)
@@ -45,4 +50,6 @@ async def websocket_stream(websocket: WebSocket, serial: str) -> None:
     except Exception as e:
         logger.error(f"WebSocket error for {serial}: {e}")
     finally:
+        if worker_registry:
+            await worker_registry.on_stream_disconnect(serial)
         logger.info(f"WebSocket H.264 stream ended for {serial}")
