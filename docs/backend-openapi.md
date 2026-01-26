@@ -7,27 +7,65 @@
 
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-- OpenAPI JSON: http://localhost:8000/openapi.json
+- OpenAPI JSON: [docs/openapi.json](openapi.json)（サーバー起動不要）
 
-## 使い方の例
+## REST API
 
 - デバイス一覧: `GET /api/devices`
 - デバイス詳細: `GET /api/devices/{serial}`
 - デバイス変更イベント（SSE）: `GET /api/events`
-- H.264 ストリーム（WebSocket）: `WS /api/ws/stream/{serial}`
-- JPEG キャプチャ（WebSocket）: `WS /api/ws/capture/{serial}`
+- セッション一覧: `GET /api/sessions`
 
-キャプチャ画像の保存先は環境変数 `CAPTURE_OUTPUT_DIR` で指定できます（未指定時は `captures/`）。
+詳細は [docs/openapi.json](openapi.json) を参照。
 
-キャプチャのデフォルト品質は `CAPTURE_JPEG_QUALITY`（1〜100、未指定時は 80）で調整できます。
-セッションのアイドル停止は `STREAM_IDLE_TIMEOUT_SEC`（秒、未指定時は 5）です。
+## WebSocket API
 
-`GET /api/sessions` はセッション一覧に加えて、stream/capture の接続数などの状態も返します。
+OpenAPI は WebSocket を表現できないため、**ソースコードのdocstringが正**です。
 
-## OpenAPI の保存（任意）
+### H.264 ストリーム: `WS /api/ws/stream/{serial}`
 
-```bash
-curl -fsS http://localhost:8000/openapi.json -o openapi.json
+📄 ソース: [backend/app/api/endpoints/stream.py](../backend/app/api/endpoints/stream.py)
+
+| 方向 | 形式 | 説明 |
+|------|------|------|
+| server → client | binary | H.264 NAL units（Annex-B形式） |
+
+- 接続するとストリーミング開始、切断で終了
+- 画面回転時はSPS/PPSが変更される
+
+### JPEG キャプチャ: `WS /api/ws/capture/{serial}`
+
+📄 ソース: [backend/app/api/endpoints/capture.py](../backend/app/api/endpoints/capture.py)
+
+| 方向 | 形式 | 説明 |
+|------|------|------|
+| client → server | JSON | キャプチャリクエスト |
+| server → client | JSON | 結果メタデータ |
+| server → client | binary | JPEG画像 |
+
+**リクエスト例**:
+```json
+{"type": "capture", "format": "jpeg", "quality": 80, "save": false}
 ```
 
-必要なら、この `openapi.json` を元に API クライアント生成（TypeScript / Python）を行えます。
+**レスポンス例**:
+```json
+{"type": "capture_result", "capture_id": "...", "width": 1080, "height": 1920, ...}
+```
+（続いてJPEGバイナリが送信される）
+
+## 環境変数
+
+| 変数 | 説明 | デフォルト |
+|------|------|-----------|
+| `CAPTURE_OUTPUT_DIR` | キャプチャ画像の保存先 | `captures/` |
+| `CAPTURE_JPEG_QUALITY` | JPEG品質（1〜100） | `80` |
+| `STREAM_IDLE_TIMEOUT_SEC` | アイドル時のセッション停止秒数 | `5` |
+
+## OpenAPI の更新
+
+```bash
+make openapi
+```
+
+`docs/openapi.json` が更新されます。
