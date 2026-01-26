@@ -7,6 +7,7 @@ React components for Android screen streaming
 - 🎥 H.264 video streaming via WebSocket
 - ⚡ Low latency with JMuxer
 - 🔁 Device rotation / resolution change supported (auto reset + layout follow)
+- 🖼️ Video fit control (`contain` / `cover`)
 - 🔄 Auto-reconnect support
 - 📊 Built-in stats display
 - 🎨 Customizable styling
@@ -31,6 +32,8 @@ function App() {
     <H264Player
       wsUrl="/api/ws/stream/emulator-5554"
       className="w-full max-w-2xl"
+      fit="contain"
+      maxHeight="70vh"
       onConnected={() => console.log('Connected!')}
       onError={(error) => console.error('Error:', error)}
     />
@@ -84,6 +87,10 @@ function CustomPlayer() {
 | ---- | ---- | ------- | ----------- |
 | `wsUrl` | `string` | required | WebSocket URL for the stream |
 | `className` | `string` | `''` | CSS class name |
+| `videoClassName` | `string` | `''` | CSS class name for the `<video>` element |
+| `videoStyle` | `React.CSSProperties` | - | Inline style for the `<video>` element |
+| `fit` | `'contain' \| 'cover'` | `'contain'` | `object-fit` behavior for the video |
+| `maxHeight` | `string` | `'70vh'` | Max height for the video (CSS length) |
 | `fps` | `number` | `30` | Frame rate for JMuxer |
 | `autoReconnect` | `boolean` | `true` | Auto-reconnect on disconnect |
 | `reconnectInterval` | `number` | `3000` | Reconnect interval (ms) |
