@@ -172,11 +172,8 @@ screen-stream-capture/
 ## ドキュメント
 
 - [アーキテクチャ詳細](docs/architecture.md)
-- [API リファレンス](docs/api-reference.md)
 - [Backend API（FastAPI / OpenAPI）](docs/backend-openapi.md)
 - [途中参加（late join）で白画面になる問題と解決策](docs/late-join.md)
-- [Python ライブラリ](packages/android-screen-stream/README.md)
-- [React コンポーネント](packages/react-android-screen/README.md)
 
 ## 技術スタック
 

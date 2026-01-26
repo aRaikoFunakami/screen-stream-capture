@@ -132,7 +132,6 @@
 |-------------|-------------------|
 | **[README.md](./README.md)** | プロジェクト全体の把握、セットアップ方法 |
 | **[docs/architecture.md](./docs/architecture.md)** | アーキテクチャ詳細 |
-| **[docs/api-reference.md](./docs/api-reference.md)** | API リファレンス |
 | **[docs/backend-openapi.md](./docs/backend-openapi.md)** | FastAPI の自動生成 API ドキュメント（/docs）の見方 |
 | **[instructions/git-commit.md](./instructions/git-commit.md)** | コミットメッセージ規約（Conventional Commits / テスト記載ルール） |
 
@@ -151,9 +150,8 @@ Android デバイスの画面を Web ブラウザにリアルタイムでスト�
 ### アーキテクチャ
 
 アーキテクチャ: docs/architecture.md
-バックエンドAPI: docs/api-reference.md (削除するか検討)
 バックエンドAPI: docs/backend-openapi.md 
-raw H.264 配信を途中から受信を実現する方法: docs/latest-join.md
+raw H.264 配信を途中から受信を実現する方法: docs/late-join.md
 
 ---
 
@@ -481,9 +479,8 @@ npm test
 
 - [README.md](./README.md) - プロジェクト概要
 - [docs/architecture.md](./docs/architecture.md) - アーキテクチャ詳細
-- [docs/api-reference.md](./docs/api-reference.md) - API リファレンス
-- [packages/android-screen-stream/README.md](./packages/android-screen-stream/README.md) - Python ライブラリ
-- [packages/react-android-screen/README.md](./packages/react-android-screen/README.md) - React コンポーネント
+- [docs/backend-openapi.md](./docs/backend-openapi.md) - Backend API（FastAPI / OpenAPI）
+- [docs/late-join.md](./docs/late-join.md) - 途中参加（late join）で白画面になる問題と解決策
 
 ### 外部ドキュメント
 

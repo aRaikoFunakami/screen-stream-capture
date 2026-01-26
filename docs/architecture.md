@@ -330,7 +330,8 @@ screen-stream-capture/
 ├── Makefile
 ├── docs/
 │   ├── architecture.md            # 本ドキュメント
-│   └── api-reference.md           # API リファレンス
+│   ├── backend-openapi.md         # Backend API（FastAPI / OpenAPI）
+│   └── late-join.md               # 途中参加で白画面になる問題と解決策
 └── README.md
 ```
 
