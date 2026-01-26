@@ -11,12 +11,22 @@ WS /api/ws/capture/{serial}
       これはデコーダ起動直後で、最初のフレームが来るまで待つ必要があるためです。
     - 2回目以降のキャプチャは約60〜120msで完了します。
 
-Protocol (minimal):
-- client -> server (text JSON): {"type":"capture","format":"jpeg","quality":80,"save":true}
-- server -> client (text JSON): {"type":"capture_result",...}
+Protocol:
+- client -> server (text JSON):
+    {"type": "capture", "format": "jpeg", "quality": 80, "save": true}
+    - type: "capture"（必須）
+    - format: "jpeg"のみ対応（省略可、デフォルト: jpeg）
+    - quality: 1-100（省略可、デフォルト: 環境変数 CAPTURE_JPEG_QUALITY または 80）
+    - save: サーバーにも保存するか（省略可、デフォルト: false）
+
+- server -> client (text JSON):
+    {"type": "capture_result", "capture_id": "...", "width": 1080, "height": 1920, ...}
+
 - server -> client (binary): JPEG bytes
 
-See work/multi_device_stream_and_capture/plan.md for details.
+エラーレスポンス:
+    {"type": "error", "code": "UNSUPPORTED_FORMAT", "message": "..."}
+    {"type": "error", "code": "CAPTURE_FAILED", "message": "..."}
 """
 
 from __future__ import annotations

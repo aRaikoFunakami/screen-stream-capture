@@ -1,4 +1,24 @@
-"""WebSocket streaming endpoints."""
+"""WebSocket streaming endpoints.
+
+WS /api/ws/stream/{serial}
+
+概要:
+    WebSocket接続すると、指定デバイスのH.264ストリームをバイナリで受信できます。
+    接続中はscrcpy-serverが起動し、切断で自動停止します（最後の購読者が切断後、
+    STREAM_IDLE_TIMEOUT_SEC秒でセッション終了）。
+
+Protocol:
+- client -> server: なし（受信専用）
+- server -> client (binary): H.264 NAL units（Annex-B形式、0x00000001区切り）
+
+フロントエンド実装例:
+    JMuxer等でH.264をMSE経由で<video>に表示できます。
+    画面回転時はSPS/PPSが変更されるため、JMuxerのリセットが必要です。
+
+エラー:
+- 4004: Device not found
+- 1011: Server not ready
+"""
 
 from __future__ import annotations
 
