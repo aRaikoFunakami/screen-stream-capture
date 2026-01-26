@@ -166,17 +166,31 @@ class CaptureWorker:
         return str(file_path)
 
     async def _get_latest_frame(self, *, timeout_sec: float) -> FrameBuffer:
+        """キャプチャリクエスト時に最新フレームを取得する。
+        
+        重要: 既にフレームがある場合でも、必ず新しいフレームが来るまで待つ。
+        これにより、キャプチャボタンを押した時点の画面が確実に取得される。
+        """
         async with self._cond:
-            if self._latest_frame is not None:
-                before = self._seq
-                try:
-                    await asyncio.wait_for(self._cond.wait_for(lambda: self._seq > before), timeout=0.5)
-                except TimeoutError:
-                    pass
+            # 現在のシーケンス番号を記録
+            current_seq = self._seq
+            
+            # 新しいフレームが来るまで待つ（現在より大きいシーケンス番号）
+            try:
+                await asyncio.wait_for(
+                    self._cond.wait_for(lambda: self._seq > current_seq and self._latest_frame is not None),
+                    timeout=timeout_sec,
+                )
+            except TimeoutError:
+                # タイムアウトした場合、既存フレームがあればそれを使用（フォールバック）
                 if self._latest_frame is not None:
+                    logger.warning(
+                        f"Capture timeout waiting for new frame (seq={current_seq}), "
+                        f"using existing frame (seq={self._seq})"
+                    )
                     return self._latest_frame
-
-            await asyncio.wait_for(self._cond.wait_for(lambda: self._latest_frame is not None), timeout=timeout_sec)
+                raise TimeoutError("No frame available for capture")
+            
             assert self._latest_frame is not None
             return self._latest_frame
 
@@ -243,8 +257,9 @@ class CaptureWorker:
             "info",
             "-nostats",
             "-nostdin",
+            # 入力オプション: バッファリングを最小化
             "-fflags",
-            "+genpts+nobuffer+flush_packets",
+            "+genpts+nobuffer+discardcorrupt",
             "-flags",
             "low_delay",
             "-probesize",
@@ -255,10 +270,15 @@ class CaptureWorker:
             "h264",
             "-i",
             "pipe:0",
+            # 出力オプション: フレームを即座に出力
+            "-vsync",
+            "passthrough",
             "-pix_fmt",
             "yuv420p",
             "-f",
             "rawvideo",
+            "-flush_packets",
+            "1",
             "pipe:1",
         ]
 
