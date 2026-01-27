@@ -5,6 +5,7 @@ description = "Screen Stream Capture official backend (FastAPI)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "android-screen-stream",
   "fastapi>=0.109.0",
   "uvicorn[standard]>=0.27.0",
 ]
@@ -22,3 +23,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.uv.sources]
+android-screen-stream = { path = "../packages/android-screen-stream", editable = true }

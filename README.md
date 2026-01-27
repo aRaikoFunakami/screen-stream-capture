@@ -55,6 +55,44 @@ make setup
 
 ブラウザで http://localhost:5173 にアクセス
 
+### Docker なしでバックエンドのみ起動
+
+Docker を使わずにバックエンドのみを起動する場合：
+
+#### 前提条件
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)（Python パッケージマネージャー）
+- adb（Android Debug Bridge）がホストにインストール済み
+
+#### セットアップ & 起動
+
+```bash
+# プロジェクトルートで実行
+./backend/scripts/run_local.sh
+```
+
+または手動で実行する場合：
+
+```bash
+# 1. scrcpy-server をダウンロード
+make download-scrcpy-server
+
+# 2. バックエンドディレクトリに移動
+cd backend
+
+# 3. 依存関係をインストール（android-screen-stream を含む）
+uv add --editable "$(pwd)/../packages/android-screen-stream"
+uv sync
+
+# 4. バックエンド起動
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+起動後、以下にアクセス：
+- Swagger UI: http://localhost:8000/docs
+- ヘルスチェック: http://localhost:8000/api/health
+
 ## フロントエンドの使い方
 
 ### メイン画面
