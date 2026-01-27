@@ -171,6 +171,26 @@ async for chunk in session.subscribe():
 
 詳細: [packages/android-screen-stream/README.md](packages/android-screen-stream/README.md)
 
+### Python (Capture Client)
+
+```bash
+# editable install
+uv add --editable /path/to/packages/android-capture-client
+```
+
+```python
+from android_capture_client import CaptureSession
+
+# バックグラウンドスレッドで WebSocket 接続を維持
+with CaptureSession("emulator-5554", backend_url="ws://localhost:8000") as session:
+    # 任意のタイミングでスクリーンショットを取得（メインスレッドはブロックされない）
+    result = session.capture(quality=80)
+    result.save("screenshot.jpg")
+    print(f"Captured: {result.width}x{result.height}")
+```
+
+詳細: [packages/android-capture-client/README.md](packages/android-capture-client/README.md)
+
 ### React (Frontend)
 
 ```bash
@@ -203,7 +223,8 @@ import { H264Player } from 'react-android-screen'
 screen-stream-capture/
 ├── backend/                        # 公式 Backend (FastAPI)
 ├── packages/
-│   ├── android-screen-stream/     # Python ライブラリ
+│   ├── android-screen-stream/     # Python ライブラリ（H.264 ストリーミング）
+│   ├── android-capture-client/    # Python ライブラリ（スクリーンキャプチャ）
 │   └── react-android-screen/      # React コンポーネント
 ├── examples/
 │   └── simple-viewer/             # 使用例
