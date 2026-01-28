@@ -3,8 +3,8 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { useAndroidStream } from './useAndroidStream'
-import type { H264PlayerFit, H264PlayerProps, StreamStatus } from './types'
+import { useAndroidStream } from './useAndroidStream.js'
+import type { H264PlayerFit, H264PlayerProps, StreamStatus } from './types.js'
 
 /**
  * バイト数を人間が読める形式にフォーマット

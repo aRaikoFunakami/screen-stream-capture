@@ -4,7 +4,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import JMuxer from 'jmuxer'
-import type { StreamStatus, StreamStats, UseAndroidStreamOptions, UseAndroidStreamResult } from './types'
+import type { StreamStatus, StreamStats, UseAndroidStreamOptions, UseAndroidStreamResult } from './types.js'
 
 /**
  * H.264 NAL unit からSPS（Sequence Parameter Set）を検出し、解像度情報を抽出する簡易パーサー。
