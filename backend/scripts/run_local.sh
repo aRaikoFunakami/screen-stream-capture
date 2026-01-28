@@ -105,5 +105,8 @@ echo ""
 echo "Press Ctrl+C to stop"
 echo ""
 
+# 環境変数を設定（Docker と違い、ローカルでは実際のパスを指定）
+export SCRCPY_SERVER_JAR="$PROJECT_ROOT/vendor/scrcpy-server.jar"
+
 # バックエンド起動
 exec uv run uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
