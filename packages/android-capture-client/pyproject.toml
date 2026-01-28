@@ -34,6 +34,8 @@ dev = [
 
 [project.scripts]
 capture-demo = "android_capture_client.demo:main"
+capture-demo-simple = "android_capture_client.demo_simple:main"
+capture-demo-nonblocking = "android_capture_client.demo_nonblocking:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
