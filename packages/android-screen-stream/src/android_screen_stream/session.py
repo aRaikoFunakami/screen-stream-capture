@@ -15,27 +15,82 @@ from .client import ScrcpyClient
 logger = logging.getLogger(__name__)
 
 
-class _AnnexBExtractor:
-    """AnnexB形式のバイト列から完全なNAL unit列を抽出する。
+class _H264UnitExtractor:
+    """H.264 の NAL unit を抽出する。
 
-    TCP read などで任意分割された raw H.264 (AnnexB) を入力として受け取り、
-    start code (00 00 01 / 00 00 00 01) で区切られた NAL unit を返す。
+    上流(scrcpy)は端末/設定により、以下のどちらかのフォーマットで出てくることがある:
 
+    - Annex-B: start code (00 00 01 / 00 00 00 01) 区切り
+    - AVCC: 4byte big-endian length prefix 区切り
+
+    いずれの場合も、返却する NAL は Annex-B (00 00 00 01) 形式に正規化する。
     末尾の未確定データは内部バッファに保持され、次回入力で確定する。
     """
 
-    def __init__(self, *, max_buffer_bytes: int = 512 * 1024):
+    def __init__(
+        self,
+        *,
+        max_buffer_bytes: int = 512 * 1024,
+        max_nal_bytes: int = 4 * 1024 * 1024,
+        scan_limit_bytes: int = 64,
+    ):
         self._buf = bytearray()
         self._max = max_buffer_bytes
+        self._max_nal = max_nal_bytes
+        self._scan_limit = scan_limit_bytes
 
-    def push(self, data: bytes) -> list[bytes]:
-        if data:
-            self._buf.extend(data)
-            if len(self._buf) > self._max:
-                # start code を探してから末尾を残す（無い場合は末尾のみ残す）
-                cut = len(self._buf) - self._max
-                del self._buf[:cut]
+    @staticmethod
+    def _starts_with_start_code(buf: bytearray) -> bool:
+        return buf.startswith(b"\x00\x00\x01") or buf.startswith(b"\x00\x00\x00\x01")
 
+    def _find_start_code(self, buf: bytearray) -> int:
+        n = len(buf)
+        i = 0
+        while i < n - 3:
+            if buf[i] == 0 and buf[i + 1] == 0:
+                if buf[i + 2] == 1:
+                    return i
+                if i < n - 4 and buf[i + 2] == 0 and buf[i + 3] == 1:
+                    return i
+            i += 1
+        return -1
+
+    def _looks_like_avcc_at(self, buf: bytearray, offset: int) -> bool:
+        if offset + 5 > len(buf):
+            return False
+        nal_len = int.from_bytes(buf[offset : offset + 4], "big")
+        if nal_len <= 0 or nal_len > self._max_nal:
+            return False
+        if offset + 4 + nal_len > len(buf):
+            return False
+        nal_header = buf[offset + 4]
+        nal_type = nal_header & 0x1F
+        # 0 は reserved (invalid)。それ以外は型としてはあり得る。
+        return nal_type != 0
+
+    def _align_buffer(self) -> None:
+        """バッファ先頭を Annex-B か AVCC に揃える（scrcpyの先頭ヘッダ等を捨てる）。"""
+        buf = self._buf
+        if not buf:
+            return
+
+        if self._starts_with_start_code(buf):
+            return
+
+        start_idx = self._find_start_code(buf)
+        if start_idx > 0:
+            del buf[:start_idx]
+            return
+
+        # Annex-B start code が見つからない場合、AVCCの長さプレフィックスっぽい位置を探す
+        scan_to = min(self._scan_limit, max(0, len(buf) - 4))
+        for i in range(scan_to + 1):
+            if self._looks_like_avcc_at(buf, i):
+                if i > 0:
+                    del buf[:i]
+                return
+
+    def _extract_annexb(self) -> list[bytes]:
         buf = self._buf
         n = len(buf)
         if n < 4:
@@ -61,8 +116,7 @@ class _AnnexBExtractor:
         # start code 前のゴミを捨てる
         if starts[0] != 0:
             del buf[: starts[0]]
-            # 再スキャン（短いので許容）
-            return self.push(b"")
+            return self._extract_annexb()
 
         if len(starts) < 2:
             return []
@@ -76,6 +130,43 @@ class _AnnexBExtractor:
         last = starts[-1]
         self._buf = buf[last:]
         return out
+
+    def _extract_avcc(self) -> list[bytes]:
+        buf = self._buf
+        out: list[bytes] = []
+
+        # length-prefix で区切られた NAL を Annex-B に変換
+        while True:
+            if len(buf) < 4:
+                break
+            nal_len = int.from_bytes(buf[0:4], "big")
+            if nal_len <= 0 or nal_len > self._max_nal:
+                # ずれている可能性があるので、1byte進めて再アラインを試す
+                del buf[:1]
+                self._align_buffer()
+                if not buf or self._starts_with_start_code(buf):
+                    break
+                continue
+            if len(buf) < 4 + nal_len:
+                break
+            nal_payload = bytes(buf[4 : 4 + nal_len])
+            out.append(b"\x00\x00\x00\x01" + nal_payload)
+            del buf[: 4 + nal_len]
+        return out
+
+    def push(self, data: bytes) -> list[bytes]:
+        if data:
+            self._buf.extend(data)
+            if len(self._buf) > self._max:
+                cut = len(self._buf) - self._max
+                del self._buf[:cut]
+
+        self._align_buffer()
+        if not self._buf:
+            return []
+        if self._starts_with_start_code(self._buf):
+            return self._extract_annexb()
+        return self._extract_avcc()
 
 
 def _nal_type(nal: bytes) -> Optional[int]:
@@ -142,7 +233,7 @@ class StreamSession:
         self._stats = StreamStats()
 
         # late joiner 対応: SPS/PPS と「最新GOP(IDR〜現在)」を保持して join 時に先に送る
-        self._extractor = _AnnexBExtractor()
+        self._extractor = _H264UnitExtractor()
         self._last_sps: bytes = b""
         self._last_pps: bytes = b""
         self._au_prefix: list[bytes] = []  # AUD/SEI 等（直近VCL前）
@@ -198,7 +289,7 @@ class StreamSession:
             self._client = None
 
         # 解析/キャッシュをリセット
-        self._extractor = _AnnexBExtractor()
+        self._extractor = _H264UnitExtractor()
         self._last_sps = b""
         self._last_pps = b""
         self._au_prefix.clear()

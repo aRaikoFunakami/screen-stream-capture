@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,17 @@ class Settings:
 def load_settings() -> Settings:
     """環境変数から Settings を生成する。"""
 
-    scrcpy_server_jar = os.environ.get("SCRCPY_SERVER_JAR", "/app/vendor/scrcpy-server.jar")
+    scrcpy_server_jar_env = os.environ.get("SCRCPY_SERVER_JAR")
+    if scrcpy_server_jar_env:
+        scrcpy_server_jar = scrcpy_server_jar_env
+    else:
+        # Docker では /app/vendor/scrcpy-server.jar を想定しているが、ローカル実行/pytest では
+        # このリポジトリ配下の vendor/ を使う。
+        candidates = [
+            Path("/app/vendor/scrcpy-server.jar"),
+            Path(__file__).resolve().parents[3] / "vendor" / "scrcpy-server.jar",
+        ]
+        scrcpy_server_jar = str(next((p for p in candidates if p.exists()), candidates[0]))
 
     cors = os.environ.get("CORS_ALLOW_ORIGINS", "*")
     cors_allow_origins = [o.strip() for o in cors.split(",") if o.strip()]

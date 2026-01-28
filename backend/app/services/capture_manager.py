@@ -302,7 +302,7 @@ class CaptureWorker:
             "-nostdin",
             # 入力オプション: バッファリングを最小化
             "-fflags",
-            "+genpts+nobuffer+discardcorrupt",
+            "+genpts+discardcorrupt",
             "-flags",
             "low_delay",
             "-probesize",
