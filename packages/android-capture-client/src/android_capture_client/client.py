@@ -42,6 +42,9 @@ class CaptureClient:
         backend_url: str = "ws://localhost:8000",
         connect_timeout: float = 10.0,
         capture_timeout: float = 30.0,
+        init_wait: float = 8.0,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ):
         """Initialize the capture client.
         
@@ -50,14 +53,23 @@ class CaptureClient:
             backend_url: WebSocket URL of the backend server
             connect_timeout: Timeout for WebSocket connection
             capture_timeout: Timeout for capture operation
+            init_wait: Time to wait after connection for decoder initialization.
+                       The backend needs time to start ffmpeg and decode the first frame.
+                       Set to 0 to skip waiting (useful if connection is kept alive).
+            max_retries: Maximum number of retry attempts for CAPTURE_TIMEOUT errors
+            retry_delay: Delay between retry attempts (seconds)
         """
         self.serial = serial
         self.backend_url = backend_url.rstrip("/")
         self.connect_timeout = connect_timeout
         self.capture_timeout = capture_timeout
+        self.init_wait = init_wait
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         
         self._ws: ClientConnection | None = None
         self._connected = False
+        self._initialized = False  # True after first successful capture or init_wait
         self._lock = asyncio.Lock()
 
     @property
@@ -67,6 +79,10 @@ class CaptureClient:
 
     async def connect(self) -> None:
         """Establish WebSocket connection to the backend.
+        
+        After connection, waits for `init_wait` seconds to allow the backend
+        decoder to initialize. This is necessary because the backend needs time
+        to start ffmpeg and decode the first H.264 frame.
         
         Raises:
             ConnectionError: If connection fails
@@ -84,6 +100,14 @@ class CaptureClient:
             )
             self._connected = True
             logger.info(f"Connected to capture WebSocket for {self.serial}")
+            
+            # Wait for decoder initialization
+            if self.init_wait > 0:
+                logger.info(f"Waiting {self.init_wait}s for decoder initialization...")
+                await asyncio.sleep(self.init_wait)
+                self._initialized = True
+                logger.info("Decoder initialization wait complete")
+                
         except asyncio.TimeoutError:
             raise ConnectionError(f"Connection timeout to {ws_url}")
         except Exception as e:
@@ -100,6 +124,7 @@ class CaptureClient:
             finally:
                 self._ws = None
                 self._connected = False
+                self._initialized = False
 
     async def capture(
         self,
@@ -107,6 +132,9 @@ class CaptureClient:
         save: bool = False,
     ) -> CaptureResult:
         """Capture a screenshot from the device.
+        
+        This method includes automatic retry logic for CAPTURE_TIMEOUT errors,
+        which can occur if the decoder hasn't finished initializing.
         
         Args:
             quality: JPEG quality (1-100)
@@ -116,14 +144,37 @@ class CaptureClient:
             CaptureResult with the captured image data
             
         Raises:
-            CaptureError: If capture fails
+            CaptureError: If capture fails after all retries
             ConnectionError: If not connected
         """
         if not self.is_connected or self._ws is None:
             raise ConnectionError("Not connected. Call connect() first.")
 
         async with self._lock:
-            return await self._do_capture(quality, save)
+            last_error: CaptureError | None = None
+            
+            for attempt in range(self.max_retries):
+                try:
+                    result = await self._do_capture(quality, save)
+                    self._initialized = True  # Mark as initialized after first success
+                    return result
+                except CaptureError as e:
+                    last_error = e
+                    # Only retry on CAPTURE_TIMEOUT
+                    if e.code != "CAPTURE_TIMEOUT":
+                        raise
+                    
+                    if attempt < self.max_retries - 1:
+                        logger.warning(
+                            f"Capture timeout (attempt {attempt + 1}/{self.max_retries}), "
+                            f"retrying in {self.retry_delay}s..."
+                        )
+                        await asyncio.sleep(self.retry_delay)
+                    else:
+                        logger.error(f"Capture failed after {self.max_retries} attempts")
+            
+            assert last_error is not None
+            raise last_error
 
     async def _do_capture(self, quality: int, save: bool) -> CaptureResult:
         """Internal capture implementation."""
