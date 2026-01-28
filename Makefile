@@ -39,7 +39,7 @@ setup: download-scrcpy-server
 	@echo "=== Installing Python dependencies ==="
 	cd packages/android-screen-stream && uv sync
 	@echo "=== Installing NPM dependencies ==="
-	cd packages/react-android-screen && npm install
+	cd packages/react-android-screen && npm install && npm run build
 	cd examples/simple-viewer/frontend && npm install
 	@echo "=== Building Docker images ==="
 	docker compose build
@@ -63,9 +63,11 @@ down:
 	docker compose down
 
 # 完全再構築
-rebuild:
+rebuild: download-scrcpy-server
 	@echo "=== Stopping and removing containers ==="
 	docker compose down --rmi all --volumes --remove-orphans
+	@echo "=== Building local react-android-screen dist ==="
+	cd packages/react-android-screen && npm install && npm run build
 	@echo "=== Rebuilding images ==="
 	docker compose build --no-cache
 	@echo "=== Starting containers ==="
