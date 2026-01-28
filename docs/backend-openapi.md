@@ -57,8 +57,11 @@ WebSocket 接続後、最初のキャプチャリクエストを送信する前�
 
 **リクエスト例**:
 ```json
-{"type": "capture", "format": "jpeg", "quality": 80, "save": false}
+{"type": "capture", "format": "jpeg", "quality": 80, "save": false, "wait_for_new_frame": false}
 ```
+
+`wait_for_new_frame` は省略可能で、デフォルトは `false`（待たずに最新フレームを返す）です。
+クリック瞬間の画面にできるだけ寄せたい場合は `true` を指定してください（最大5秒待機、タイムアウト時は既存フレームにフォールバック）。
 
 **レスポンス例**:
 ```json

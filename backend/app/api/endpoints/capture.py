@@ -19,11 +19,12 @@ WS /api/ws/capture/{serial}
 
 Protocol:
 - client -> server (text JSON):
-    {"type": "capture", "format": "jpeg", "quality": 80, "save": true}
+    {"type": "capture", "format": "jpeg", "quality": 80, "save": true, "wait_for_new_frame": true}
     - type: "capture"（必須）
     - format: "jpeg"のみ対応（省略可、デフォルト: jpeg）
     - quality: 1-100（省略可、デフォルト: 環境変数 CAPTURE_JPEG_QUALITY または 80）
     - save: サーバーにも保存するか（省略可、デフォルト: false）
+    - wait_for_new_frame: true の場合「次のフレーム」を最大5秒待つ（省略可、デフォルト: false）
 
 - server -> client (text JSON):
     {"type": "capture_result", "capture_id": "...", "width": 1080, "height": 1920, ...}
@@ -111,9 +112,15 @@ async def websocket_capture(websocket: WebSocket, serial: str) -> None:
 
                 quality = data.get("quality")
                 save = bool(data.get("save", False))
+                wait_for_new_frame = bool(data.get("wait_for_new_frame", False))
 
                 try:
-                    result, jpeg = await worker.capture_jpeg(quality=quality, save=save)
+                    result, jpeg = await worker.capture_jpeg(
+                        quality=quality,
+                        save=save,
+                        wait_for_new_frame=wait_for_new_frame,
+                        wait_timeout_sec=5.0,
+                    )
                 except TimeoutError:
                     await websocket.send_json(
                         {

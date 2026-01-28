@@ -156,7 +156,14 @@ class CaptureWorker:
             if self._refcount == 0:
                 await self._stop_decoder()
 
-    async def capture_jpeg(self, *, quality: Optional[int], save: bool) -> tuple[CaptureResult, bytes]:
+    async def capture_jpeg(
+        self,
+        *,
+        quality: Optional[int],
+        save: bool,
+        wait_for_new_frame: bool = False,
+        wait_timeout_sec: float = 5.0,
+    ) -> tuple[CaptureResult, bytes]:
         """Return a JPEG image (bytes) and its metadata."""
         import time
         t0 = time.perf_counter()
@@ -166,7 +173,10 @@ class CaptureWorker:
 
         async with self._encode_sem:
             t1 = time.perf_counter()
-            frame = await self._get_latest_frame(timeout_sec=5.0)
+            frame = await self._get_latest_frame(
+                timeout_sec=wait_timeout_sec,
+                wait_for_new_frame=wait_for_new_frame,
+            )
             t2 = time.perf_counter()
             jpeg = await self._encode_jpeg_with_ffmpeg(frame, qscale=qscale)
             t3 = time.perf_counter()
@@ -208,31 +218,51 @@ class CaptureWorker:
 
         return str(file_path)
 
-    async def _get_latest_frame(self, *, timeout_sec: float) -> FrameBuffer:
+    async def _get_latest_frame(self, *, timeout_sec: float, wait_for_new_frame: bool) -> FrameBuffer:
         """キャプチャリクエスト時に最新フレームを取得する。
-        
-        重要: 既にフレームがある場合でも、必ず新しいフレームが来るまで待つ。
-        これにより、キャプチャボタンを押した時点の画面が確実に取得される。
+
+        デフォルト挙動（wait_for_new_frame=False）:
+            - 既にフレームがある場合は即座に返す（高速）。
+            - まだフレームが無い場合は、最初のフレームが来るまで待つ。
+
+        wait_for_new_frame=True の場合:
+            - 既にフレームがある場合でも「次のフレーム」を最大 timeout_sec 待つ。
+            - タイムアウトしたら既存フレームを返す（フォールバック）。
         """
         async with self._cond:
+            # 既存フレームを即返却（高速パス）
+            if self._latest_frame is not None and not wait_for_new_frame:
+                return self._latest_frame
+
             # 現在のシーケンス番号を記録
             current_seq = self._seq
-            
-            # 新しいフレームが来るまで待つ（現在より大きいシーケンス番号）
+
+            # まだフレームが無い場合は、まず1枚目が来るまで待つ
+            if self._latest_frame is None:
+                try:
+                    await asyncio.wait_for(
+                        self._cond.wait_for(lambda: self._latest_frame is not None),
+                        timeout=timeout_sec,
+                    )
+                except TimeoutError:
+                    raise TimeoutError("No frame available for capture")
+                assert self._latest_frame is not None
+                return self._latest_frame
+
+            # wait_for_new_frame=True: 新しいフレームが来るまで待つ（現在より大きいシーケンス番号）
             try:
                 await asyncio.wait_for(
                     self._cond.wait_for(lambda: self._seq > current_seq and self._latest_frame is not None),
                     timeout=timeout_sec,
                 )
             except TimeoutError:
-                # タイムアウトした場合、既存フレームがあればそれを使用（フォールバック）
-                if self._latest_frame is not None:
-                    logger.warning(
-                        f"Capture timeout waiting for new frame (seq={current_seq}), "
-                        f"using existing frame (seq={self._seq})"
-                    )
-                    return self._latest_frame
-                raise TimeoutError("No frame available for capture")
+                # タイムアウトした場合、既存フレームを使用（フォールバック）
+                logger.warning(
+                    f"Capture timeout waiting for new frame (seq={current_seq}), "
+                    f"using existing frame (seq={self._seq})"
+                )
+                assert self._latest_frame is not None
+                return self._latest_frame
             
             assert self._latest_frame is not None
             return self._latest_frame

@@ -223,6 +223,8 @@ class CaptureSession:
         quality: int = 80,
         save: bool = False,
         timeout: float | None = None,
+        *,
+        wait_for_new_frame: bool = False,
     ) -> CaptureResult:
         """Capture a screenshot from the device.
         
@@ -233,6 +235,7 @@ class CaptureSession:
             quality: JPEG quality (1-100)
             save: Whether to save the capture on the server
             timeout: Timeout for the operation (default: capture_timeout)
+            wait_for_new_frame: If True, wait up to 5s for the next decoded frame
             
         Returns:
             CaptureResult with the captured image data
@@ -254,7 +257,11 @@ class CaptureSession:
         async def do_capture() -> None:
             try:
                 assert self._client is not None
-                result = await self._client.capture(quality=quality, save=save)
+                result = await self._client.capture(
+                    quality=quality,
+                    save=save,
+                    wait_for_new_frame=wait_for_new_frame,
+                )
                 future.set_result(result)
             except Exception as e:
                 future.set_exception(e)

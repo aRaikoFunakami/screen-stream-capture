@@ -130,6 +130,8 @@ class CaptureClient:
         self,
         quality: int = 80,
         save: bool = False,
+        *,
+        wait_for_new_frame: bool = False,
     ) -> CaptureResult:
         """Capture a screenshot from the device.
         
@@ -155,7 +157,7 @@ class CaptureClient:
             
             for attempt in range(self.max_retries):
                 try:
-                    result = await self._do_capture(quality, save)
+                    result = await self._do_capture(quality, save, wait_for_new_frame)
                     self._initialized = True  # Mark as initialized after first success
                     return result
                 except CaptureError as e:
@@ -176,7 +178,7 @@ class CaptureClient:
             assert last_error is not None
             raise last_error
 
-    async def _do_capture(self, quality: int, save: bool) -> CaptureResult:
+    async def _do_capture(self, quality: int, save: bool, wait_for_new_frame: bool) -> CaptureResult:
         """Internal capture implementation."""
         assert self._ws is not None
 
@@ -186,6 +188,7 @@ class CaptureClient:
             "format": "jpeg",
             "quality": quality,
             "save": save,
+            "wait_for_new_frame": wait_for_new_frame,
         }
         await self._ws.send(json.dumps(request))
         logger.debug(f"Sent capture request: quality={quality}, save={save}")
