@@ -193,6 +193,13 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
   const timestampRef = useRef(0)
   const frameCountRef = useRef(0)
 
+  // エラー復帰用の状態
+  const decodeErrorCountRef = useRef(0)
+  const waitingForKeyFrameRef = useRef(false)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const MAX_DECODE_ERRORS = 5  // この回数連続でエラーが発生したらキーフレーム待ち
+  const DECODER_ERROR_RECONNECT_DELAY = 1000  // デコーダーエラー時の再接続待機時間
+
   // コールバックを ref で安定させる
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -208,6 +215,11 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
   }, [onConnected, onDisconnected, onError, debug])
 
   const disconnect = useCallback(() => {
+    // 再接続タイマーをクリア
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -223,6 +235,8 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
     isConfiguredRef.current = false
     spsRef.current = null
     ppsRef.current = null
+    decodeErrorCountRef.current = 0
+    waitingForKeyFrameRef.current = false
     setStatus('disconnected')
   }, [])
 
@@ -249,9 +263,27 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
       return
     }
 
+    // 再接続用のヘルパー関数
+    const scheduleReconnect = (reason: string) => {
+      console.warn(`[WebCodecs] Scheduling reconnect due to: ${reason}`)
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+      reconnectTimeoutRef.current = setTimeout(() => {
+        console.log('[WebCodecs] Executing scheduled reconnect...')
+        reconnectTimeoutRef.current = null
+        // connect を再呼び出し（disconnect は connect 内で行われる）
+        connectRef.current()
+      }, DECODER_ERROR_RECONNECT_DELAY)
+    }
+
     // VideoDecoder を初期化
     const decoder = new VideoDecoder({
       output: (frame: VideoFrame) => {
+        // デコード成功時はエラーカウントをリセット
+        decodeErrorCountRef.current = 0
+        waitingForKeyFrameRef.current = false
+
         // Canvas のサイズを動画に合わせる
         if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
           canvas.width = frame.displayWidth
@@ -271,8 +303,12 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
         }
       },
       error: (e: DOMException) => {
-        console.error('[WebCodecs] Decoder error:', e)
+        console.error('[WebCodecs] Decoder error:', e.name, e.message)
         onErrorRef.current?.(`Decoder error: ${e.message}`)
+        
+        // デコーダーエラー時は再接続をスケジュール
+        console.log('[WebCodecs] Decoder entered error state, will attempt recovery...')
+        scheduleReconnect(`Decoder error: ${e.message}`)
       },
     })
     decoderRef.current = decoder
@@ -363,6 +399,28 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
         if (isConfiguredRef.current && (nalType === NAL_TYPE_IDR || nalType === NAL_TYPE_NON_IDR)) {
           const isKeyFrame = nalType === NAL_TYPE_IDR
 
+          // キーフレーム待ち状態の場合
+          if (waitingForKeyFrameRef.current) {
+            if (isKeyFrame) {
+              console.log('[WebCodecs] Recovery: Received key frame, resuming decode')
+              waitingForKeyFrameRef.current = false
+              decodeErrorCountRef.current = 0
+            } else {
+              // 非キーフレームはスキップ
+              if (debugRef.current) {
+                console.log('[WebCodecs] Skipping non-key frame while waiting for recovery')
+              }
+              continue
+            }
+          }
+
+          // デコーダーの状態をチェック
+          if (decoder.state === 'closed') {
+            console.error('[WebCodecs] Decoder is closed, scheduling reconnect')
+            scheduleReconnect('Decoder closed unexpectedly')
+            return
+          }
+
           try {
             // Start code を除去して AVCC 形式に変換（4-byte length prefix）
             const nalData = stripStartCode(nalUnit)
@@ -383,8 +441,26 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
             // タイムスタンプを進める（30fps 想定）
             timestampRef.current += 33333 // マイクロ秒
           } catch (e) {
-            if (debugRef.current) {
-              console.warn('[WebCodecs] Decode error:', e)
+            decodeErrorCountRef.current++
+            console.warn(`[WebCodecs] Decode error (${decodeErrorCountRef.current}/${MAX_DECODE_ERRORS}):`, e)
+            
+            // 連続エラーが閾値を超えたらキーフレーム待ちに移行
+            if (decodeErrorCountRef.current >= MAX_DECODE_ERRORS) {
+              console.warn('[WebCodecs] Too many decode errors, waiting for next key frame to recover')
+              waitingForKeyFrameRef.current = true
+              
+              // デコーダーをフラッシュしてリセット
+              try {
+                if (decoder.state === 'configured') {
+                  decoder.flush().then(() => {
+                    console.log('[WebCodecs] Decoder flushed for recovery')
+                  }).catch((flushErr) => {
+                    console.warn('[WebCodecs] Flush failed:', flushErr)
+                  })
+                }
+              } catch (flushErr) {
+                console.warn('[WebCodecs] Flush error:', flushErr)
+              }
             }
           }
         }
