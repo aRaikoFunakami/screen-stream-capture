@@ -182,7 +182,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       node: videoRef.current,
       mode: 'video',
       fps,
-      flushingTime: 100,
+      flushingTime: 10,
       debug: false,
       onReady: () => {
         console.log('JMuxer ready')
@@ -360,7 +360,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
           node: video,
           mode: 'video',
           fps,
-          flushingTime: 100,
+          flushingTime: 10,
           debug: false,
           onReady: () => {
             console.log('JMuxer ready (after stall recovery reset)')
@@ -447,6 +447,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
     }
 
     ws.onmessage = (event) => {
+      const wsRecvTime = performance.now()
       const data = new Uint8Array(event.data as ArrayBuffer)
       totalBytes += data.length
       totalChunks += 1
@@ -491,7 +492,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
                 node: video,
                 mode: 'video',
                 fps,
-                flushingTime: 100,
+                flushingTime: 10,
                 debug: false,
                 onReady: () => {
                   console.log('JMuxer ready (after reset)')
@@ -517,6 +518,14 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       }
 
       jmuxerRef.current?.feed({ video: data })
+      
+      // フロントエンド処理時間を計測（WebSocket受信→JMuxer feed完了）
+      const feedDoneTime = performance.now()
+      const frontendProcessMs = feedDoneTime - wsRecvTime
+      if (debug && totalChunks % 30 === 0) {
+        console.log(`[FRONTEND_LATENCY] chunk=${totalChunks} size=${data.length} process_ms=${frontendProcessMs.toFixed(3)}`)
+      }
+      
       maybeLiveSync()
       markPlaybackProgress()
     }

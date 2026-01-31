@@ -1,0 +1,38 @@
+{
+  "echo_rtt": {
+    "count": 100,
+    "avg_ms": 3.148,
+    "min_ms": 0.995,
+    "max_ms": 20.849,
+    "p50_ms": 3.07,
+    "p95_ms": 3.951,
+    "p99_ms": 20.849
+  },
+  "synthetic_jitter": {
+    "count": 272,
+    "avg_ms": 3.547,
+    "min_ms": 0.011,
+    "max_ms": 14.413,
+    "p50_ms": 2.65,
+    "p95_ms": 9.677,
+    "p99_ms": 11.221
+  },
+  "scrcpy_interval": {
+    "count": 152,
+    "avg_ms": 65.937,
+    "min_ms": 0.006,
+    "max_ms": 128.296,
+    "p50_ms": 99.05,
+    "p95_ms": 114.758,
+    "p99_ms": 122.48
+  },
+  "scrcpy_size": {
+    "count": 153,
+    "avg_ms": 2740.954,
+    "min_ms": 10,
+    "max_ms": 79894,
+    "p50_ms": 1207,
+    "p95_ms": 1384,
+    "p99_ms": 79666
+  }
+}

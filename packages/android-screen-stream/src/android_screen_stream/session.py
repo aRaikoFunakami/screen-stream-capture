@@ -479,10 +479,27 @@ class StreamSession:
         if not self._client:
             return
         
+        import time
+        chunk_count = 0
+        nal_count = 0
+        prev_chunk_t: float | None = None
+        prev_nal_t: float | None = None
+        
         try:
             async for chunk in self._client.stream():
                 if not self._running:
                     break
+                
+                chunk_recv_t = time.perf_counter()
+                chunk_count += 1
+                
+                # TCP chunk 到着間隔を記録（scrcpy からのデータ頻度）
+                if chunk_count % 30 == 0:
+                    interval_ms = (chunk_recv_t - prev_chunk_t) * 1000 if prev_chunk_t else 0
+                    logger.info(
+                        f"[SCRCPY_CHUNK] count={chunk_count} size={len(chunk)} interval_ms={interval_ms:.2f}"
+                    )
+                prev_chunk_t = chunk_recv_t
                 
                 # raw chunk を NAL unit に分解して配信する（late join の順序保証のため）
                 nals = self._extractor.push(chunk)
@@ -491,6 +508,7 @@ class StreamSession:
 
                     self._stats.bytes_sent += len(nal)
                     self._stats.chunks_sent += 1
+                    nal_count += 1
 
                     async with self._lock:
                         subscribers = list(self._subscribers)
@@ -501,6 +519,15 @@ class StreamSession:
                         except asyncio.QueueFull:
                             # 追いつけないクライアントはドロップ（他への配信を優先）
                             pass
+                    
+                    send_t = time.perf_counter()
+                    process_ms = (send_t - chunk_recv_t) * 1000
+                    
+                    # バックエンド内処理時間を記録（TCP受信→WebSocket送信）
+                    if nal_count % 30 == 0:
+                        logger.info(
+                            f"[BACKEND_LATENCY] nal={nal_count} process_ms={process_ms:.3f}"
+                        )
         except Exception as e:
             logger.error(f"Broadcast error for {self.serial}: {e}")
         finally:

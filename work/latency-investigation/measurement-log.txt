@@ -1,0 +1,79 @@
+
+============================================================
+A. WebSocket Echo RTT計測
+============================================================
+Echo RTT計測: url=ws://localhost:8000/api/ws/latency/echo count=100 payload=1024bytes
+  seq=10 rtt=1.19ms
+  seq=20 rtt=2.52ms
+  seq=30 rtt=3.22ms
+  seq=40 rtt=3.28ms
+  seq=50 rtt=2.86ms
+  seq=60 rtt=3.79ms
+  seq=70 rtt=3.14ms
+  seq=80 rtt=20.85ms
+  seq=90 rtt=3.72ms
+  seq=100 rtt=2.92ms
+結果: {
+  "count": 100,
+  "avg_ms": 3.148,
+  "min_ms": 0.995,
+  "max_ms": 20.849,
+  "p50_ms": 3.07,
+  "p95_ms": 3.951,
+  "p99_ms": 20.849
+}
+
+============================================================
+B. Synthetic Stream計測
+============================================================
+Synthetic Stream計測: url=ws://localhost:8000/api/ws/latency/synthetic-stream?fps=30&payload_size=4096&duration_sec=10
+  frame=30 interval=32.90ms jitter=0.43ms
+  frame=60 interval=33.07ms jitter=0.26ms
+  frame=90 interval=36.92ms jitter=3.59ms
+  frame=120 interval=35.08ms jitter=1.75ms
+  frame=150 interval=33.67ms jitter=0.34ms
+  frame=180 interval=32.54ms jitter=0.80ms
+  frame=210 interval=34.11ms jitter=0.78ms
+  frame=240 interval=39.16ms jitter=5.82ms
+  frame=270 interval=36.25ms jitter=2.91ms
+受信完了: frames=273
+結果: {
+  "count": 272,
+  "avg_ms": 3.547,
+  "min_ms": 0.011,
+  "max_ms": 14.413,
+  "p50_ms": 2.65,
+  "p95_ms": 9.677,
+  "p99_ms": 11.221
+}
+
+============================================================
+C. scrcpy Stream計測
+============================================================
+scrcpy Stream計測: url=ws://localhost:8000/api/ws/stream/emulator-5554 duration=10s
+  frames=30 elapsed=0.0s total=110.6KB
+  frames=60 elapsed=0.8s total=146.0KB
+  frames=90 elapsed=3.8s total=258.2KB
+  frames=120 elapsed=6.7s total=293.6KB
+  frames=150 elapsed=9.7s total=406.0KB
+受信完了: frames=153 total=409.5KB
+受信間隔: {
+  "count": 152,
+  "avg_ms": 65.937,
+  "min_ms": 0.006,
+  "max_ms": 128.296,
+  "p50_ms": 99.05,
+  "p95_ms": 114.758,
+  "p99_ms": 122.48
+}
+フレームサイズ: {
+  "count": 153,
+  "avg_ms": 2740.954,
+  "min_ms": 10,
+  "max_ms": 79894,
+  "p50_ms": 1207,
+  "p95_ms": 1384,
+  "p99_ms": 79666
+}
+
+結果を work/latency-investigation/measurement-results.json に保存しました

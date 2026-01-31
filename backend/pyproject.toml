@@ -8,6 +8,7 @@ dependencies = [
   "android-screen-stream",
   "fastapi>=0.109.0",
   "uvicorn[standard]>=0.27.0",
+  "websockets>=16.0",
 ]
 
 [project.optional-dependencies]
