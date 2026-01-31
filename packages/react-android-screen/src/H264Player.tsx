@@ -70,6 +70,14 @@ export function H264Player({
   onDisconnected,
   onError,
   fps = 30,
+  liveSync = true,
+  maxLatencyMs = 1500,
+  targetLatencyMs = 300,
+  stallRecovery = true,
+  stallTimeoutMs = 2000,
+  maxRecoveries = 3,
+  recoveryCooldownMs = 1000,
+  debug = false,
   autoReconnect = true,
   reconnectInterval = 3000,
 }: H264PlayerProps) {
@@ -96,6 +104,14 @@ export function H264Player({
     wsUrl,
     autoConnect: true,
     fps,
+    liveSync,
+    maxLatencyMs,
+    targetLatencyMs,
+    stallRecovery,
+    stallTimeoutMs,
+    maxRecoveries,
+    recoveryCooldownMs,
+    debug,
     onConnected: () => {
       hasConnectedOnceRef.current = true
       onConnected?.()

@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --test"
   },
   "peerDependencies": {
     "react": ">=17.0.0",

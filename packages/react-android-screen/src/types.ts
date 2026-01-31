@@ -46,6 +46,22 @@ export interface H264PlayerProps {
   onError?: (error: string) => void
   /** JMuxer のフレームレート (デフォルト: 30) */
   fps?: number
+  /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
+  liveSync?: boolean
+  /** 許容遅延 (ミリ秒, デフォルト: 1500) */
+  maxLatencyMs?: number
+  /** 追従後に保つ遅延 (ミリ秒, デフォルト: 300) */
+  targetLatencyMs?: number
+  /** 固まり検知と自動復旧を有効化 (デフォルト: true) */
+  stallRecovery?: boolean
+  /** 固まり判定: 再生時刻が進まない許容時間 (ミリ秒, デフォルト: 2000) */
+  stallTimeoutMs?: number
+  /** 自動復旧の最大回数 (デフォルト: 3) */
+  maxRecoveries?: number
+  /** 復旧試行の最小間隔 (ミリ秒, デフォルト: 1000) */
+  recoveryCooldownMs?: number
+  /** デバッグログを有効化 (デフォルト: false) */
+  debug?: boolean
   /** 自動再接続 (デフォルト: true) */
   autoReconnect?: boolean
   /** 再接続間隔 (ミリ秒, デフォルト: 3000) */
@@ -62,6 +78,22 @@ export interface UseAndroidStreamOptions {
   autoConnect?: boolean
   /** JMuxer のフレームレート (デフォルト: 30) */
   fps?: number
+  /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
+  liveSync?: boolean
+  /** 許容遅延 (ミリ秒, デフォルト: 1500) */
+  maxLatencyMs?: number
+  /** 追従後に保つ遅延 (ミリ秒, デフォルト: 300) */
+  targetLatencyMs?: number
+  /** 固まり検知と自動復旧を有効化 (デフォルト: true) */
+  stallRecovery?: boolean
+  /** 固まり判定: 再生時刻が進まない許容時間 (ミリ秒, デフォルト: 2000) */
+  stallTimeoutMs?: number
+  /** 自動復旧の最大回数 (デフォルト: 3) */
+  maxRecoveries?: number
+  /** 復旧試行の最小間隔 (ミリ秒, デフォルト: 1000) */
+  recoveryCooldownMs?: number
+  /** デバッグログを有効化 (デフォルト: false) */
+  debug?: boolean
   /** 接続時のコールバック */
   onConnected?: () => void
   /** 切断時のコールバック */
