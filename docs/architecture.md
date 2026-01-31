@@ -21,7 +21,7 @@ graph TB
         ADB[adb forward<br/>tcp:PORT]
         CLIENT[ScrcpyClient<br/>TCP接続]
         SESSION[StreamSession<br/>マルチキャスト]
-        WS[WebSocket Server<br/>/api/ws/stream/serial]
+        WS[WebSocket Server<br/>/api/ws/stream/{serial}]
         ADB --> CLIENT --> SESSION --> WS
     end
 
@@ -55,8 +55,8 @@ sequenceDiagram
     Session->>Client: ScrcpyClient(serial, config)
     Session->>Client: await start()
     Client->>ADB: push scrcpy-server.jar
-    Client->>ADB: shell app_process (raw_stream=true)
     Client->>ADB: forward tcp:PORT localabstract:scrcpy
+    Client->>ADB: shell app_process (raw_stream=true)
     Client->>Server: TCP connect
     
     loop ストリーミング
@@ -70,6 +70,14 @@ sequenceDiagram
     App->>Session: await stop()
     Session->>Client: await stop()
     Client->>Server: disconnect
+
+---
+
+## 実装追跡（詳細）
+
+アーキテクチャ概要の“実装上の接続点”を、Backend / android-screen-stream / react-android-screen / サンプルフロントまで含めて end-to-end で追跡した詳細は以下を参照してください。
+
+- [scrcpy-server → Browser (JMuxer/MSE) までの H.264 ストリーミング経路（end-to-end）](streaming-h264-end-to-end.md)
 ```
 
 ---
@@ -332,6 +340,7 @@ screen-stream-capture/
 │   ├── architecture.md            # 本ドキュメント
 │   ├── backend-openapi.md         # Backend API（FastAPI / OpenAPI）
 │   └── late-join.md               # 途中参加で白画面になる問題と解決策
+│   └── streaming-h264-end-to-end.md # 実装追跡（end-to-end）
 └── README.md
 ```
 
