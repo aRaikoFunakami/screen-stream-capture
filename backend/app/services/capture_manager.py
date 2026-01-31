@@ -506,8 +506,11 @@ class CaptureWorker:
                         await self._proc.stdin.drain()
                         chunk_count += 1
                         total_bytes += len(chunk)
-                        if chunk_count <= 3 or chunk_count % 100 == 0:
+                        # 高頻度ログは DEBUG に下げ、頻度も 1000 回ごとに削減（遅延原因になるため）
+                        if chunk_count <= 3:
                             logger.info(f"Capture feed {self.serial}: chunk #{chunk_count}, size={len(chunk)}, total={total_bytes}")
+                        elif chunk_count % 1000 == 0:
+                            logger.debug(f"Capture feed {self.serial}: chunk #{chunk_count}, size={len(chunk)}, total={total_bytes}")
                     except (BrokenPipeError, ConnectionResetError):
                         logger.warning(f"Capture feed {self.serial}: pipe broken after {chunk_count} chunks")
                         return
@@ -592,8 +595,11 @@ class CaptureWorker:
                 total_bytes += len(chunk)
                 buf.extend(chunk)
 
-                if read_count <= 3 or read_count % 100 == 0:
+                # 高頻度ログは DEBUG に下げ、頻度も 1000 回ごとに削減（遅延原因になるため）
+                if read_count <= 3:
                     logger.info(f"Capture rawvideo {self.serial}: read #{read_count}, chunk={len(chunk)}, total={total_bytes}, buf={len(buf)}, w={self._width}, h={self._height}")
+                elif read_count % 1000 == 0:
+                    logger.debug(f"Capture rawvideo {self.serial}: read #{read_count}, chunk={len(chunk)}, total={total_bytes}, buf={len(buf)}, w={self._width}, h={self._height}")
 
                 if self._width is None or self._height is None:
                     continue
