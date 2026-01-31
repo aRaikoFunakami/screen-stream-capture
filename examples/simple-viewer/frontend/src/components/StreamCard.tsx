@@ -187,6 +187,15 @@ export function StreamCard({
         <H264Player
           wsUrl={`/api/ws/stream/${serial}`}
           className="w-full"
+          debug
+          liveSync
+          // ライブ視聴用途: 遅延が溜まったら自動で追従
+          maxLatencyMs={1500}
+          targetLatencyMs={300}
+          stallRecovery
+          stallTimeoutMs={2000}
+          maxRecoveries={3}
+          recoveryCooldownMs={1000}
           onError={(error: string) => console.error('Player error:', error)}
           onConnected={() => console.log(`Stream connected: ${serial}`)}
           onDisconnected={() => console.log(`Stream disconnected: ${serial}`)}
