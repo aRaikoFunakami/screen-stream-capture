@@ -208,19 +208,19 @@ export function H264Player({
         autoPlay
         muted
         playsInline
-        className={videoClassName}
+        className={`relative z-0 ${videoClassName}`}
         style={resolvedVideoStyle}
       />
       
       {/* ステータスオーバーレイ */}
-      <div className="absolute top-2 left-2 flex items-center gap-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
+      <div className="absolute top-2 left-2 z-20 flex items-center gap-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
         <span className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
         <span>{getStatusLabel(status)}</span>
       </div>
 
       {/* 統計情報 */}
       {status === 'connected' && (
-        <div className="absolute bottom-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-xs">
+        <div className="absolute bottom-2 left-2 z-20 bg-black/50 text-white px-2 py-1 rounded text-xs">
           {formatBytes(stats.bytes)} / {stats.chunks} chunks
         </div>
       )}

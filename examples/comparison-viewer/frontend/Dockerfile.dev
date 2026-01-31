@@ -1,19 +1,16 @@
 # 開発用 Dockerfile
+# 注意: docker-compose.yml でボリュームマウントするため、
+# ソースコードのコピーは最小限にする（依存関係インストール用のみ）
 FROM node:20-alpine
 
 WORKDIR /app
 
-# react-android-screen パッケージをコピー（editable install 用）
+# react-android-screen パッケージをコピー（npm install 時に必要）
 COPY packages/react-android-screen /app/packages/react-android-screen
 
-# frontend をコピー（node_modules と lock ファイルを除外）
+# package.json のみコピーして依存関係をインストール
+# （ソースは docker-compose でマウントされる）
 COPY examples/comparison-viewer/frontend/package.json /app/frontend/
-COPY examples/comparison-viewer/frontend/vite.config.ts /app/frontend/
-COPY examples/comparison-viewer/frontend/tsconfig*.json /app/frontend/
-COPY examples/comparison-viewer/frontend/postcss.config.js /app/frontend/
-COPY examples/comparison-viewer/frontend/tailwind.config.js /app/frontend/
-COPY examples/comparison-viewer/frontend/index.html /app/frontend/
-COPY examples/comparison-viewer/frontend/src /app/frontend/src
 
 WORKDIR /app/frontend
 

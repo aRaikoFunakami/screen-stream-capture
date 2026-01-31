@@ -40,6 +40,17 @@ export function isWebCodecsSupported(): boolean {
 }
 
 /**
+ * 2つの Uint8Array が等しいかチェック
+ */
+function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+/**
  * NAL unit から NAL type を取得
  */
 function getNalType(nalUnit: Uint8Array): number {
@@ -354,14 +365,27 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
         const nalType = getNalType(nalUnit)
 
         if (nalType === NAL_TYPE_SPS) {
-          spsRef.current = nalUnit
-          if (debugRef.current) {
-            console.log('[WebCodecs] SPS received')
+          const newSps = nalUnit
+          // SPS が変わったかチェック（解像度変更対応）
+          const spsChanged = !spsRef.current || !arraysEqual(spsRef.current, newSps)
+          if (spsChanged) {
+            if (debugRef.current) {
+              console.log('[WebCodecs] SPS received (changed)')
+            }
+            spsRef.current = newSps
+            // SPS が変わったら再構成が必要
+            isConfiguredRef.current = false
           }
         } else if (nalType === NAL_TYPE_PPS) {
-          ppsRef.current = nalUnit
-          if (debugRef.current) {
-            console.log('[WebCodecs] PPS received')
+          const newPps = nalUnit
+          const ppsChanged = !ppsRef.current || !arraysEqual(ppsRef.current, newPps)
+          if (ppsChanged) {
+            if (debugRef.current) {
+              console.log('[WebCodecs] PPS received (changed)')
+            }
+            ppsRef.current = newPps
+            // PPS が変わったら再構成が必要
+            isConfiguredRef.current = false
           }
         }
 
@@ -379,12 +403,22 @@ export function useWebCodecsStream(options: UseWebCodecsStreamOptions): UseWebCo
           const description = buildAvcCDescription(spsData, ppsData)
 
           try {
+            // 既に configure 済みの場合は reset してから再構成
+            if (decoder.state === 'configured') {
+              if (debugRef.current) {
+                console.log('[WebCodecs] Resetting decoder for reconfiguration (resolution change)')
+              }
+              decoder.reset()
+            }
+
             decoder.configure({
               codec: codecString,
               description: description,
               optimizeForLatency: true,
             })
             isConfiguredRef.current = true
+            waitingForKeyFrameRef.current = false
+            decodeErrorCountRef.current = 0
             if (debugRef.current) {
               console.log('[WebCodecs] Decoder configured with description')
             }
