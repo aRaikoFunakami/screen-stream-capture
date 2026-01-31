@@ -70,6 +70,7 @@ sequenceDiagram
     App->>Session: await stop()
     Session->>Client: await stop()
     Client->>Server: disconnect
+```
 
 ---
 
