@@ -11,30 +11,30 @@ screen-stream-capture は、Android デバイスの画面を Web ブラウザに
 ```mermaid
 graph TB
     subgraph Android["Android Device"]
-        SC[Screen Capture<br/>MediaProjection]
-        ENC[H.264 Encoder<br/>MediaCodec]
-        SOCK[Unix Domain Socket<br/>localabstract:scrcpy]
+        SC["Screen Capture (MediaProjection)"]
+        ENC["H.264 Encoder (MediaCodec)"]
+        SOCK["Unix Domain Socket (localabstract:scrcpy)"]
         SC --> ENC --> SOCK
     end
 
     subgraph Host["Host Machine - Backend"]
-        ADB[adb forward<br/>tcp:PORT]
-        CLIENT[ScrcpyClient<br/>TCP接続]
-        SESSION[StreamSession<br/>マルチキャスト]
-        WS[WebSocket Server<br/>/api/ws/stream/{serial}]
+        ADB["adb forward (tcp:PORT)"]
+        CLIENT["ScrcpyClient (TCP接続)"]
+        SESSION["StreamSession (マルチキャスト)"]
+        WS["WebSocket Server (/api/ws/stream)"]
         ADB --> CLIENT --> SESSION --> WS
     end
 
     subgraph Browser["Web Browser - Frontend"]
-        WSC[WebSocket Client<br/>バイナリ受信]
-        JMUX[JMuxer<br/>H.264→fMP4変換]
-        MSE[Media Source Extensions]
-        VIDEO["&lt;video&gt; 要素<br/>リアルタイム再生"]
+        WSC["WebSocket Client (バイナリ受信)"]
+        JMUX["JMuxer (H.264→fMP4変換)"]
+        MSE["Media Source Extensions"]
+        VIDEO["video要素 (リアルタイム再生)"]
         WSC --> JMUX --> MSE --> VIDEO
     end
 
     SOCK -->|"adb forward"| ADB
-    WS -->|"WebSocket binary<br/>raw H.264"| WSC
+    WS -->|"WebSocket binary (raw H.264)"| WSC
 ```
 
 ---
