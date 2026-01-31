@@ -45,10 +45,11 @@ export function ComparisonView({ device }: ComparisonViewProps) {
             </div>
             <span className="text-xs text-blue-200">バランス型</span>
           </div>
-          <div className="flex-1 p-4 flex items-center justify-center bg-black">
+          <div className="flex-1 p-4 flex items-center justify-center bg-black overflow-hidden">
             <H264Player
               wsUrl={wsUrl}
-              className="max-w-full max-h-full object-contain"
+              className="max-w-full max-h-full"
+              maxHeight="50vh"
               onConnected={() => console.log('[MSE] Connected')}
               onDisconnected={() => console.log('[MSE] Disconnected')}
               onError={(e) => console.error('[MSE] Error:', e)}
@@ -72,11 +73,13 @@ export function ComparisonView({ device }: ComparisonViewProps) {
             </div>
             <span className="text-xs text-purple-200">低レイテンシ</span>
           </div>
-          <div className="flex-1 p-4 flex items-center justify-center bg-black">
+          <div className="flex-1 p-4 flex items-center justify-center bg-black overflow-hidden">
             {isWebCodecsSupported() ? (
               <WebCodecsPlayer
                 wsUrl={wsUrl}
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full max-h-full"
+                canvasClassName="max-w-full max-h-full"
+                canvasStyle={{ maxHeight: '50vh' }}
                 onConnected={() => console.log('[WebCodecs] Connected')}
                 onDisconnected={() => console.log('[WebCodecs] Disconnected')}
                 onError={(e) => console.error('[WebCodecs] Error:', e)}

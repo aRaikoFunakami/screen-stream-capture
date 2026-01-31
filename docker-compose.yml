@@ -33,3 +33,20 @@ services:
     depends_on:
       - backend
     command: npm run dev -- --host 0.0.0.0
+
+  comparison-viewer:
+    build:
+      context: .
+      dockerfile: examples/comparison-viewer/frontend/Dockerfile.dev
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./packages/react-android-screen:/app/packages/react-android-screen:ro
+      - ./examples/comparison-viewer/frontend:/app/frontend
+      - /app/frontend/node_modules  # node_modules はコンテナ内で管理
+    environment:
+      - VITE_BACKEND_HOST=backend
+      - VITE_BACKEND_PORT=8000
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0

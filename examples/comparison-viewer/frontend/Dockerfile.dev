@@ -1,0 +1,26 @@
+# 開発用 Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# react-android-screen パッケージをコピー（editable install 用）
+COPY packages/react-android-screen /app/packages/react-android-screen
+
+# frontend をコピー（node_modules と lock ファイルを除外）
+COPY examples/comparison-viewer/frontend/package.json /app/frontend/
+COPY examples/comparison-viewer/frontend/vite.config.ts /app/frontend/
+COPY examples/comparison-viewer/frontend/tsconfig*.json /app/frontend/
+COPY examples/comparison-viewer/frontend/postcss.config.js /app/frontend/
+COPY examples/comparison-viewer/frontend/tailwind.config.js /app/frontend/
+COPY examples/comparison-viewer/frontend/index.html /app/frontend/
+COPY examples/comparison-viewer/frontend/src /app/frontend/src
+
+WORKDIR /app/frontend
+
+# 依存関係をインストール
+RUN npm install
+
+EXPOSE 5174
+
+# 開発サーバーを起動
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

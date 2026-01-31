@@ -18,32 +18,29 @@ export function DeviceSelector({ selectedSerial, onSelect }: DeviceSelectorProps
 
   useEffect(() => {
     // SSE でデバイス一覧を監視
-    const eventSource = new EventSource('/api/sse/devices')
+    const eventSource = new EventSource('/api/events')
 
     eventSource.onopen = () => {
       console.log('SSE connected')
       setIsConnected(true)
     }
 
-    eventSource.onmessage = (event) => {
+    // 名前付きイベント 'devices' を受信
+    eventSource.addEventListener('devices', (event) => {
       try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'devices') {
-          // state が 'device' のもののみ（オンライン状態）
-          const onlineDevices = data.devices.filter(
-            (d: Device) => d.state === 'device'
-          )
-          setDevices(onlineDevices)
+        const deviceList = JSON.parse(event.data) as Device[]
+        // state が 'device' のもののみ（オンライン状態）
+        const onlineDevices = deviceList.filter((d) => d.state === 'device')
+        setDevices(onlineDevices)
 
-          // 選択中のデバイスが消えた場合は選択解除
-          if (selectedSerial && !onlineDevices.find((d: Device) => d.serial === selectedSerial)) {
-            onSelect(null)
-          }
+        // 選択中のデバイスが消えた場合は選択解除
+        if (selectedSerial && !onlineDevices.find((d) => d.serial === selectedSerial)) {
+          onSelect(null)
         }
       } catch (e) {
         console.error('Failed to parse SSE message:', e)
       }
-    }
+    })
 
     eventSource.onerror = () => {
       console.error('SSE connection error')
