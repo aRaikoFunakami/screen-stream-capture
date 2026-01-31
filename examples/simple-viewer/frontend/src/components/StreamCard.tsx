@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { H264Player } from 'react-android-screen'
+import { H264Player, WebCodecsPlayer, isWebCodecsSupported } from 'react-android-screen'
+
+// URL パラメータで切り替え可能: ?player=webcodecs
+const useWebCodecs = new URLSearchParams(window.location.search).get('player') === 'webcodecs'
 
 interface StreamCardProps {
   serial: string
@@ -184,22 +187,33 @@ export function StreamCard({
 
       {/* Streaming area with capture overlay */}
       <div className="relative bg-black rounded overflow-hidden">
-        <H264Player
-          wsUrl={`/api/ws/stream/${serial}`}
-          className="w-full"
-          debug
-          liveSync
-          // ライブ視聴用途: 遅延が溜まったら自動で追従
-          maxLatencyMs={1500}
-          targetLatencyMs={300}
-          stallRecovery
-          stallTimeoutMs={2000}
-          maxRecoveries={3}
-          recoveryCooldownMs={1000}
-          onError={(error: string) => console.error('Player error:', error)}
-          onConnected={() => console.log(`Stream connected: ${serial}`)}
-          onDisconnected={() => console.log(`Stream disconnected: ${serial}`)}
-        />
+        {useWebCodecs && isWebCodecsSupported() ? (
+          <WebCodecsPlayer
+            wsUrl={`/api/ws/stream/${serial}`}
+            className="w-full"
+            debug
+            onError={(error: string) => console.error('Player error:', error)}
+            onConnected={() => console.log(`Stream connected (WebCodecs): ${serial}`)}
+            onDisconnected={() => console.log(`Stream disconnected (WebCodecs): ${serial}`)}
+          />
+        ) : (
+          <H264Player
+            wsUrl={`/api/ws/stream/${serial}`}
+            className="w-full"
+            debug
+            liveSync
+            // ライブ視聴用途: 遅延が溜まったら自動で追従
+            maxLatencyMs={1500}
+            targetLatencyMs={300}
+            stallRecovery
+            stallTimeoutMs={2000}
+            maxRecoveries={3}
+            recoveryCooldownMs={1000}
+            onError={(error: string) => console.error('Player error:', error)}
+            onConnected={() => console.log(`Stream connected: ${serial}`)}
+            onDisconnected={() => console.log(`Stream disconnected: ${serial}`)}
+          />
+        )}
 
         {/* Capture image overlay */}
         {captureImageUrl && (
