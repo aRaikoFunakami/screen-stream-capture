@@ -87,6 +87,9 @@ services:
       - ./packages/react-android-screen:/app/packages/react-android-screen:ro
       - ./examples/simple-viewer/frontend:/app/frontend
       - /app/frontend/node_modules  # node_modules はコンテナ内で管理
+    environment:
+      - VITE_BACKEND_HOST=localhost
+      - VITE_BACKEND_PORT=8000
     depends_on:
       - backend-linux
     command: npm run dev -- --host 0.0.0.0
