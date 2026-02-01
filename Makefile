@@ -41,6 +41,7 @@ setup: download-scrcpy-server
 	@echo "=== Installing NPM dependencies ==="
 	cd packages/react-android-screen && npm install && npm run build
 	cd examples/simple-viewer/frontend && npm install
+	cd examples/comparison-viewer/frontend && npm install
 	@echo "=== Building Docker images ==="
 	docker compose build
 	@echo "=== Starting containers ==="
@@ -48,7 +49,8 @@ setup: download-scrcpy-server
 	@echo ""
 	@echo "=== Setup complete ==="
 	@echo "Backend:  http://localhost:8000"
-	@echo "Frontend: http://localhost:5173"
+	@echo "Frontend (simple-viewer):     http://localhost:5173"
+	@echo "Frontend (comparison-viewer): http://localhost:5174"
 	@echo ""
 	@echo "View logs: make logs"
 
@@ -56,7 +58,8 @@ setup: download-scrcpy-server
 up:
 	docker compose up -d
 	@echo "Backend:  http://localhost:8000"
-	@echo "Frontend: http://localhost:5173"
+	@echo "Frontend (simple-viewer):     http://localhost:5173"
+	@echo "Frontend (comparison-viewer): http://localhost:5174"
 
 # Docker 終了
 down:
@@ -68,6 +71,9 @@ rebuild: download-scrcpy-server
 	docker compose down --rmi all --volumes --remove-orphans
 	@echo "=== Building local react-android-screen dist ==="
 	cd packages/react-android-screen && npm install && npm run build
+	@echo "=== Installing frontend dependencies ==="
+	cd examples/simple-viewer/frontend && npm install
+	cd examples/comparison-viewer/frontend && npm install
 	@echo "=== Rebuilding images ==="
 	docker compose build --no-cache
 	@echo "=== Starting containers ==="
@@ -75,7 +81,8 @@ rebuild: download-scrcpy-server
 	@echo ""
 	@echo "=== Rebuild complete ==="
 	@echo "Backend:  http://localhost:8000"
-	@echo "Frontend: http://localhost:5173"
+	@echo "Frontend (simple-viewer):     http://localhost:5173"
+	@echo "Frontend (comparison-viewer): http://localhost:5174"
 
 # ログ表示
 logs:
@@ -98,5 +105,6 @@ clean:
 	rm -rf packages/react-android-screen/node_modules
 	rm -rf packages/react-android-screen/dist
 	rm -rf examples/simple-viewer/frontend/node_modules
+	rm -rf examples/comparison-viewer/frontend/node_modules
 	rm -rf examples/simple-viewer/frontend/dist
 	docker compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
