@@ -235,6 +235,40 @@ screen-stream-capture/
 └── README.md
 ```
 
+## WebCodecs 利用時の注意（リモートアクセス）
+
+WebCodecs API（低遅延プレイヤー）は **Secure Context** でのみ動作します。
+
+| アクセス方法 | WebCodecs | MSE/JMuxer |
+|-------------|-----------|------------|
+| `http://localhost:5173` | ✅ 動作 | ✅ 動作 |
+| `http://127.0.0.1:5173` | ✅ 動作 | ✅ 動作 |
+| `http://192.168.x.x:5173`（HTTP + IP） | ❌ 動作しない | ✅ 動作 |
+| `https://example.com` | ✅ 動作 | ✅ 動作 |
+
+### リモートサーバーで WebCodecs を使う方法
+
+#### 方法 1: SSH トンネル（推奨・証明書不要）
+
+```bash
+# ローカルマシンで実行（リモートサーバーへトンネル）
+ssh -L 5173:localhost:5173 -L 5174:localhost:5174 -L 8000:localhost:8000 user@remote-server
+```
+
+その後、ブラウザで `http://localhost:5173` にアクセス。
+
+#### 方法 2: Chrome フラグで例外許可（開発用）
+
+1. Chrome で `chrome://flags/#unsafely-treat-insecure-origin-as-secure` を開く
+2. `http://192.168.x.x:5173` を追加
+3. Chrome を再起動
+
+#### 方法 3: HTTPS を設定（本番向け）
+
+Let's Encrypt 等で SSL 証明書を取得し、リバースプロキシ（nginx 等）で HTTPS を有効化。
+
+> **補足**: MSE/JMuxer プレイヤーは HTTP + IP アドレスでも動作しますが、WebCodecs より遅延が大きくなります（50-150ms 程度）。
+
 ## ドキュメント
 
 - [アーキテクチャ詳細](docs/architecture.md)
