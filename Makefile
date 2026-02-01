@@ -5,12 +5,22 @@ SCRCPY_VERSION := 3.3.4
 SCRCPY_SERVER_URL := https://github.com/Genymobile/scrcpy/releases/download/v$(SCRCPY_VERSION)/scrcpy-server-v$(SCRCPY_VERSION)
 SCRCPY_SERVER_PATH := vendor/scrcpy-server.jar
 
+# OS 検出: Linux なら linux, それ以外（macOS）なら mac
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    PROFILE := linux
+else
+    PROFILE := mac
+endif
+
 # デフォルトターゲット
 .DEFAULT_GOAL := help
 
 # ヘルプ
 help:
 	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Detected OS: $(UNAME_S) -> profile: $(PROFILE)"
 	@echo ""
 	@echo "Targets:"
 	@echo "  setup           初期セットアップ（依存インストール + Docker ビルド + 起動）"
@@ -42,10 +52,10 @@ setup: download-scrcpy-server
 	cd packages/react-android-screen && npm install && npm run build
 	cd examples/simple-viewer/frontend && npm install
 	cd examples/comparison-viewer/frontend && npm install
-	@echo "=== Building Docker images ==="
-	docker compose build
+	@echo "=== Building Docker images (profile: $(PROFILE)) ==="
+	docker compose --profile $(PROFILE) build
 	@echo "=== Starting containers ==="
-	docker compose up -d
+	docker compose --profile $(PROFILE) up -d
 	@echo ""
 	@echo "=== Setup complete ==="
 	@echo "Backend:  http://localhost:8000"
@@ -56,28 +66,28 @@ setup: download-scrcpy-server
 
 # Docker 起動
 up:
-	docker compose up -d
+	docker compose --profile $(PROFILE) up -d
 	@echo "Backend:  http://localhost:8000"
 	@echo "Frontend (simple-viewer):     http://localhost:5173"
 	@echo "Frontend (comparison-viewer): http://localhost:5174"
 
 # Docker 終了
 down:
-	docker compose down
+	docker compose --profile $(PROFILE) down
 
 # 完全再構築
 rebuild: download-scrcpy-server
 	@echo "=== Stopping and removing containers ==="
-	docker compose down --rmi all --volumes --remove-orphans
+	docker compose --profile $(PROFILE) down --rmi all --volumes --remove-orphans
 	@echo "=== Building local react-android-screen dist ==="
 	cd packages/react-android-screen && npm install && npm run build
 	@echo "=== Installing frontend dependencies ==="
 	cd examples/simple-viewer/frontend && npm install
 	cd examples/comparison-viewer/frontend && npm install
-	@echo "=== Rebuilding images ==="
-	docker compose build --no-cache
+	@echo "=== Rebuilding images (profile: $(PROFILE)) ==="
+	docker compose --profile $(PROFILE) build --no-cache
 	@echo "=== Starting containers ==="
-	docker compose up -d
+	docker compose --profile $(PROFILE) up -d
 	@echo ""
 	@echo "=== Rebuild complete ==="
 	@echo "Backend:  http://localhost:8000"
@@ -86,11 +96,11 @@ rebuild: download-scrcpy-server
 
 # ログ表示
 logs:
-	docker compose logs -f
+	docker compose --profile $(PROFILE) logs -f
 
 # バックエンドシェル
 shell-backend:
-	docker compose exec backend /bin/bash
+	docker compose --profile $(PROFILE) exec backend-$(PROFILE) /bin/bash
 
 # OpenAPI スキーマ出力
 openapi:
@@ -107,4 +117,4 @@ clean:
 	rm -rf examples/simple-viewer/frontend/node_modules
 	rm -rf examples/comparison-viewer/frontend/node_modules
 	rm -rf examples/simple-viewer/frontend/dist
-	docker compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
+	docker compose --profile $(PROFILE) down --rmi all --volumes --remove-orphans 2>/dev/null || true

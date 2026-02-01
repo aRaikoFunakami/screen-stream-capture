@@ -1,5 +1,16 @@
+# Docker Compose configuration with profiles for macOS/Linux
+# Usage:
+#   macOS:  docker compose --profile mac up -d
+#   Linux:  docker compose --profile linux up -d
+# Or simply use: make up (auto-detects OS)
+
 services:
-  backend:
+  # =============================================================================
+  # Backend service - macOS profile
+  # Uses host.docker.internal for ADB connection
+  # =============================================================================
+  backend-mac:
+    profiles: ["mac"]
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -19,8 +30,36 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
-  frontend:
+  # =============================================================================
+  # Backend service - Linux profile (network_mode: host)
+  # Recommended for Linux - shares host network directly
+  # =============================================================================
+  backend-linux:
+    profiles: ["linux"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    network_mode: host
+    volumes:
+      # editable install のためソースをマウント
+      - ./packages/android-screen-stream:/app/packages/android-screen-stream:ro
+      - ./backend:/app/backend
+      - ./vendor:/app/vendor:ro
+    environment:
+      - SCRCPY_SERVER_JAR=/app/vendor/scrcpy-server.jar
+      # network_mode: host では localhost で接続
+      - ADB_SERVER_SOCKET=tcp:127.0.0.1:5037
+      - SCRCPY_CONNECT_HOST=127.0.0.1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # =============================================================================
+  # Frontend service - macOS profile
+  # =============================================================================
+  frontend-mac:
+    profiles: ["mac"]
     build:
       context: .
       dockerfile: examples/simple-viewer/frontend/Dockerfile
@@ -31,10 +70,33 @@ services:
       - ./examples/simple-viewer/frontend:/app/frontend
       - /app/frontend/node_modules  # node_modules はコンテナ内で管理
     depends_on:
-      - backend
+      - backend-mac
     command: npm run dev -- --host 0.0.0.0
+    restart: unless-stopped
 
-  comparison-viewer:
+  # =============================================================================
+  # Frontend service - Linux profile (network_mode: host)
+  # =============================================================================
+  frontend-linux:
+    profiles: ["linux"]
+    build:
+      context: .
+      dockerfile: examples/simple-viewer/frontend/Dockerfile
+    network_mode: host
+    volumes:
+      - ./packages/react-android-screen:/app/packages/react-android-screen:ro
+      - ./examples/simple-viewer/frontend:/app/frontend
+      - /app/frontend/node_modules  # node_modules はコンテナ内で管理
+    depends_on:
+      - backend-linux
+    command: npm run dev -- --host 0.0.0.0
+    restart: unless-stopped
+
+  # =============================================================================
+  # Comparison Viewer - macOS profile
+  # =============================================================================
+  comparison-viewer-mac:
+    profiles: ["mac"]
     build:
       context: .
       dockerfile: examples/comparison-viewer/frontend/Dockerfile.dev
@@ -45,8 +107,30 @@ services:
       - ./examples/comparison-viewer/frontend:/app/frontend
       - /app/frontend/node_modules  # node_modules はコンテナ内で管理
     environment:
-      - VITE_BACKEND_HOST=backend
+      - VITE_BACKEND_HOST=backend-mac
       - VITE_BACKEND_PORT=8000
     depends_on:
-      - backend
+      - backend-mac
     command: npm run dev -- --host 0.0.0.0
+    restart: unless-stopped
+
+  # =============================================================================
+  # Comparison Viewer - Linux profile (network_mode: host)
+  # =============================================================================
+  comparison-viewer-linux:
+    profiles: ["linux"]
+    build:
+      context: .
+      dockerfile: examples/comparison-viewer/frontend/Dockerfile.dev
+    network_mode: host
+    volumes:
+      - ./packages/react-android-screen:/app/packages/react-android-screen:ro
+      - ./examples/comparison-viewer/frontend:/app/frontend
+      - /app/frontend/node_modules  # node_modules はコンテナ内で管理
+    environment:
+      - VITE_BACKEND_HOST=localhost
+      - VITE_BACKEND_PORT=8000
+    depends_on:
+      - backend-linux
+    command: npm run dev -- --host 0.0.0.0 --port 5174
+    restart: unless-stopped
