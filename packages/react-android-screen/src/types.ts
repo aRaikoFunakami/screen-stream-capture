@@ -8,6 +8,14 @@
 export type StreamStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 /**
+ * LiveSync のモード
+ * - 'seek': 従来のシークベースの同期 (Chrome 向き)
+ * - 'playbackRate': 再生速度調整による同期 (Firefox 向き、スムーズ)
+ * - 'hybrid': 通常は playbackRate、極端な遅延時のみ seek (デフォルト)
+ */
+export type LiveSyncMode = 'seek' | 'playbackRate' | 'hybrid'
+
+/**
  * ストリーム統計情報
  */
 export interface StreamStats {
@@ -48,6 +56,8 @@ export interface H264PlayerProps {
   fps?: number
   /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
   liveSync?: boolean
+  /** LiveSync のモード: 'seek' | 'playbackRate' | 'hybrid' (デフォルト: 'hybrid') */
+  liveSyncMode?: LiveSyncMode
   /** 許容遅延 (ミリ秒, デフォルト: 1500) */
   maxLatencyMs?: number
   /** 追従後に保つ遅延 (ミリ秒, デフォルト: 300) */
@@ -80,6 +90,8 @@ export interface UseAndroidStreamOptions {
   fps?: number
   /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
   liveSync?: boolean
+  /** LiveSync のモード: 'seek' | 'playbackRate' | 'hybrid' (デフォルト: 'hybrid') */
+  liveSyncMode?: LiveSyncMode
   /** 許容遅延 (ミリ秒, デフォルト: 1500) */
   maxLatencyMs?: number
   /** 追従後に保つ遅延 (ミリ秒, デフォルト: 300) */

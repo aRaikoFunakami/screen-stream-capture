@@ -122,6 +122,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
     autoConnect = true,
     fps = 30,
     liveSync = true,
+    liveSyncMode = 'hybrid',
     maxLatencyMs = 1500,
     targetLatencyMs = 300,
     stallRecovery = true,
@@ -287,28 +288,41 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       }
     }
 
+    /**
+     * LiveSync: 遅延に応じて再生位置を調整する
+     * 
+     * モード別の動作:
+     * - 'seek': 従来のシークベースの同期。遅延が閾値を超えたらシーク。
+     * - 'playbackRate': 再生速度調整のみ。シークせずスムーズにキャッチアップ。
+     * - 'hybrid': 通常は playbackRate、極端な遅延（3秒以上）時のみシーク。
+     */
     const maybeLiveSync = () => {
       if (!liveSync) return
       if (!video) return
       if (video.readyState < 2) return
       if (video.buffered.length === 0) return
 
+      const lastIndex = video.buffered.length - 1
+      const range = {
+        start: video.buffered.start(lastIndex),
+        end: video.buffered.end(lastIndex),
+      }
+      const safeEnd = Math.max(range.start, range.end - 0.1)
+      const latencySec = safeEnd - video.currentTime
+
+      // Telemetry logging (debug mode)
       if (debug) {
         const now = performance.now()
         if (now - lastTelemetryAt > 2000) {
           lastTelemetryAt = now
-          const lastIndex = video.buffered.length - 1
-          const range = {
-            start: video.buffered.start(lastIndex),
-            end: video.buffered.end(lastIndex),
-          }
-          const latencySec = range.end - video.currentTime
           console.log('LiveSync telemetry', {
             currentTime: video.currentTime,
             range,
             latencySec,
             maxLatencyMs,
             targetLatencyMs,
+            playbackRate: video.playbackRate,
+            liveSyncMode,
           })
         }
       }
@@ -317,25 +331,63 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       if (now - lastLiveSyncAt < 250) return
       lastLiveSyncAt = now
 
-      const lastIndex = video.buffered.length - 1
-      const range = {
-        start: video.buffered.start(lastIndex),
-        end: video.buffered.end(lastIndex),
+      const maxLatencySec = maxLatencyMs / 1000
+      const targetLatencySec = targetLatencyMs / 1000
+      
+      // 極端な遅延の閾値（3秒）- hybrid モードでシークを使う閾値
+      const extremeLatencyThresholdSec = 3.0
+
+      // playbackRate モードまたは hybrid モード（極端な遅延でない場合）
+      if (liveSyncMode === 'playbackRate' || 
+          (liveSyncMode === 'hybrid' && latencySec < extremeLatencyThresholdSec)) {
+        // playbackRate による gradual catch-up
+        // 遅延に応じて再生速度を調整:
+        // - 遅延が target 以下: 1.0 (通常速度)
+        // - 遅延が target ～ max: 1.0 ～ 1.15 (徐々に加速)
+        // - 遅延が max 以上: 1.2 (最大加速)
+        let desiredRate = 1.0
+        if (latencySec > maxLatencySec) {
+          desiredRate = 1.2
+        } else if (latencySec > targetLatencySec) {
+          // 線形補間: targetLatency で 1.0、maxLatency で 1.15
+          const ratio = (latencySec - targetLatencySec) / (maxLatencySec - targetLatencySec)
+          desiredRate = 1.0 + ratio * 0.15
+        } else if (latencySec < targetLatencySec * 0.5) {
+          // 遅延が target の半分以下なら、少し遅くして安定させる
+          desiredRate = 0.95
+        }
+
+        // 現在の playbackRate と大きく異なる場合のみ変更（頻繁な変更を避ける）
+        if (Math.abs(video.playbackRate - desiredRate) > 0.02) {
+          video.playbackRate = desiredRate
+          if (debug) {
+            console.log('LiveSync playbackRate adjusted', {
+              latencySec,
+              desiredRate,
+              previousRate: video.playbackRate,
+            })
+          }
+        }
+        return
       }
+
+      // seek モードまたは hybrid モードで極端な遅延の場合
       const seekTo = computeLiveSyncSeekTimeInBufferedRange(video.currentTime, range, liveSyncConfig, 0.1)
       if (seekTo === null) return
 
       try {
         video.currentTime = seekTo
+        // シーク後は playbackRate をリセット
+        if (video.playbackRate !== 1.0) {
+          video.playbackRate = 1.0
+        }
         if (debug) {
-          const bufferedEnd = Math.max(range.start, range.end)
-          const latencySec = bufferedEnd - video.currentTime
-          console.log('LiveSync applied', {
+          console.log('LiveSync seek applied', {
             seekTo,
             range,
             maxLatencyMs,
             targetLatencyMs,
-            latencySec,
+            latencySec: safeEnd - seekTo,
           })
         }
       } catch (e) {
