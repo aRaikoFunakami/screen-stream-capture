@@ -343,28 +343,39 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
         // playbackRate による gradual catch-up
         // 遅延に応じて再生速度を調整:
         // - 遅延が target 以下: 1.0 (通常速度)
-        // - 遅延が target ～ max: 1.0 ～ 1.15 (徐々に加速)
-        // - 遅延が max 以上: 1.2 (最大加速)
+        // - 遅延が target ～ max: 1.0 ～ 1.1 (徐々に加速)
+        // - 遅延が max 以上: 1.15 (最大加速)
+        //
+        // ヒステリシス: 頻繁な切り替えを防ぐため、加速中は target の 0.7 倍まで
+        // latency が下がらないと 1.0 に戻さない
+        const currentRate = video.playbackRate
+        const isAccelerating = currentRate > 1.02
+        
+        // 加速解除の閾値（ヒステリシス）
+        const decelThreshold = isAccelerating ? targetLatencySec * 0.7 : targetLatencySec
+        
         let desiredRate = 1.0
         if (latencySec > maxLatencySec) {
-          desiredRate = 1.2
+          desiredRate = 1.15
         } else if (latencySec > targetLatencySec) {
-          // 線形補間: targetLatency で 1.0、maxLatency で 1.15
+          // 線形補間: targetLatency で 1.0、maxLatency で 1.1
           const ratio = (latencySec - targetLatencySec) / (maxLatencySec - targetLatencySec)
-          desiredRate = 1.0 + ratio * 0.15
-        } else if (latencySec < targetLatencySec * 0.5) {
-          // 遅延が target の半分以下なら、少し遅くして安定させる
-          desiredRate = 0.95
+          desiredRate = 1.0 + ratio * 0.1
+        } else if (latencySec > decelThreshold) {
+          // ヒステリシス範囲内: 現在の rate を維持（加速中なら加速継続）
+          desiredRate = isAccelerating ? Math.max(1.02, currentRate * 0.98) : 1.0
         }
+        // latency が decelThreshold 以下なら 1.0 に戻す
 
         // 現在の playbackRate と大きく異なる場合のみ変更（頻繁な変更を避ける）
-        if (Math.abs(video.playbackRate - desiredRate) > 0.02) {
+        if (Math.abs(currentRate - desiredRate) > 0.03) {
           video.playbackRate = desiredRate
           if (debug) {
             console.log('LiveSync playbackRate adjusted', {
               latencySec,
               desiredRate,
-              previousRate: video.playbackRate,
+              previousRate: currentRate,
+              isAccelerating,
             })
           }
         }
