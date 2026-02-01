@@ -46,7 +46,7 @@ graph LR
 ### セットアップ
 
 ```bash
-git clone https://github.com/your/screen-stream-capture.git
+git clone https://github.com/aRaikoFunakami/screen-stream-capture.git
 cd screen-stream-capture
 
 # 初期セットアップ（scrcpy-server ダウンロード + Docker ビルド + 起動）
