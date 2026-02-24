@@ -102,9 +102,9 @@ class ScrcpyClient:
     
     async def _setup_tunnel(self) -> None:
         """adb forwardを設定"""
-        # 既存のフォワードを削除
-        await self._run_adb("forward", "--remove-all")
-        
+        # 自ポートの既存フォワードのみ削除（--remove-all は他サービスの forward を破壊するため使用禁止）
+        await self._run_adb("forward", "--remove", f"tcp:{self.local_port}")
+
         # 新しいフォワードを設定
         code, stdout, stderr = await self._run_adb(
             "forward", f"tcp:{self.local_port}", "localabstract:scrcpy"
@@ -229,8 +229,8 @@ class ScrcpyClient:
                 self._server_process.kill()
             self._server_process = None
         
-        # フォワードを削除
-        await self._run_adb("forward", "--remove-all")
+        # 自ポートのフォワードのみ削除（--remove-all は他サービスの forward を破壊するため使用禁止）
+        await self._run_adb("forward", "--remove", f"tcp:{self.local_port}")
         
         logger.info("Client stopped")
     
