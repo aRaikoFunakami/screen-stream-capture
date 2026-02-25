@@ -54,6 +54,8 @@ export interface H264PlayerProps {
   onError?: (error: string) => void
   /** JMuxer のフレームレート (デフォルト: 30) */
   fps?: number
+  /** JMuxer のバッファフラッシュ間隔 (ミリ秒, デフォルト: 100) */
+  flushingTime?: number
   /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
   liveSync?: boolean
   /** LiveSync のモード: 'seek' | 'playbackRate' | 'hybrid' (デフォルト: 'hybrid') */
@@ -76,6 +78,10 @@ export interface H264PlayerProps {
   autoReconnect?: boolean
   /** 再接続間隔 (ミリ秒, デフォルト: 3000) */
   reconnectInterval?: number
+  /** 内部 video 要素の ref を親に公開するコールバック */
+  onVideoRef?: (ref: React.RefObject<HTMLVideoElement>) => void
+  /** コンテナ内に追加描画する子要素（オーバーレイ用） */
+  children?: React.ReactNode
 }
 
 /**
@@ -88,6 +94,8 @@ export interface UseAndroidStreamOptions {
   autoConnect?: boolean
   /** JMuxer のフレームレート (デフォルト: 30) */
   fps?: number
+  /** JMuxer のバッファフラッシュ間隔 (ミリ秒, デフォルト: 100) */
+  flushingTime?: number
   /** ライブ配信として遅延が溜まった場合に追従シークする (デフォルト: true) */
   liveSync?: boolean
   /** LiveSync のモード: 'seek' | 'playbackRate' | 'hybrid' (デフォルト: 'hybrid') */

@@ -70,6 +70,7 @@ export function H264Player({
   onDisconnected,
   onError,
   fps = 30,
+  flushingTime = 100,
   liveSync = true,
   liveSyncMode = 'hybrid',
   maxLatencyMs = 1500,
@@ -81,6 +82,8 @@ export function H264Player({
   debug = false,
   autoReconnect = true,
   reconnectInterval = 3000,
+  onVideoRef,
+  children,
 }: H264PlayerProps) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isUnmountedRef = useRef(false)
@@ -105,6 +108,7 @@ export function H264Player({
     wsUrl,
     autoConnect: true,
     fps,
+    flushingTime,
     liveSync,
     liveSyncMode,
     maxLatencyMs,
@@ -128,6 +132,11 @@ export function H264Player({
 
   // connect を ref に保存して依存配列の問題を回避
   connectRef.current = connect
+
+  // 内部 videoRef を親に公開
+  useEffect(() => {
+    onVideoRef?.(videoRef)
+  }, [videoRef, onVideoRef])
 
   // 自動再接続の処理（一度接続した後のみ）
   useEffect(() => {
@@ -238,6 +247,9 @@ export function H264Player({
           </button>
         </div>
       )}
+
+      {/* 親から注入されるオーバーレイ等 */}
+      {children}
     </div>
   )
 }

@@ -121,6 +121,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
     wsUrl,
     autoConnect = true,
     fps = 30,
+    flushingTime = 100,
     liveSync = true,
     liveSyncMode = 'hybrid',
     maxLatencyMs = 1500,
@@ -183,7 +184,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
       node: videoRef.current,
       mode: 'video',
       fps,
-      flushingTime: 10,
+      flushingTime,
       debug: false,
       onReady: () => {
         console.log('JMuxer ready')
@@ -423,7 +424,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
           node: video,
           mode: 'video',
           fps,
-          flushingTime: 10,
+          flushingTime,
           debug: false,
           onReady: () => {
             console.log('JMuxer ready (after stall recovery reset)')
@@ -555,7 +556,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
                 node: video,
                 mode: 'video',
                 fps,
-                flushingTime: 10,
+                flushingTime,
                 debug: false,
                 onReady: () => {
                   console.log('JMuxer ready (after reset)')
@@ -615,6 +616,7 @@ export function useAndroidStream(options: UseAndroidStreamOptions): UseAndroidSt
   }, [
     wsUrl,
     fps,
+    flushingTime,
     liveSync,
     maxLatencyMs,
     targetLatencyMs,
