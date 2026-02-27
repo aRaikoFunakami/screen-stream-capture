@@ -212,7 +212,7 @@ export function H264Player({
   return (
     <div 
       className={`relative bg-black rounded-lg overflow-hidden ${className}`}
-      style={aspectRatio ? { aspectRatio } : undefined}
+      style={aspectRatio ? { aspectRatio, maxWidth: '100%', maxHeight: '100%' } : undefined}
     >
       <video
         ref={videoRef}
