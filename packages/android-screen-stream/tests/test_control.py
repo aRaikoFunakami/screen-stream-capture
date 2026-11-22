@@ -149,7 +149,7 @@ async def test_pointer_down_rereads_display_size_and_scales(tmp_path):
     assert ctl._writer.sent[-2] == encode_touch("move", 100, 200, 1000, 2000)
 
 
-async def test_swipe_during_size_refresh_is_replayed_whole(tmp_path):
+async def test_finished_gesture_during_size_refresh_is_not_replayed(tmp_path):
     ctl, _ = _offline_client(tmp_path)
     gate = asyncio.Event()
     adb = ctl._adb
@@ -165,9 +165,8 @@ async def test_swipe_during_size_refresh_is_replayed_whole(tmp_path):
     assert len(ctl._writer.sent) == 3
     gate.set()
     await ctl._refresh_task
-    # スワイプ全体(down/move/up)を新しいサイズで送り直す(タップにしない)
-    assert ctl._writer.sent[3:] == [encode_touch("down", 500, 1000, 1000, 2000), encode_touch("move", 500, 400, 1000, 2000),
-                                    encode_touch("up", 500, 200, 1000, 2000)]
+    # 離し終えたジェスチャーは送り直さない(そのタップで回転した場合に二重タップになる)
+    assert len(ctl._writer.sent) == 3 and ctl._size == (1000, 2000)
 
 
 async def test_invalid_message_returns_error_without_sending(tmp_path):
@@ -220,7 +219,7 @@ async def test_stop_releases_held_touch_and_tolerates_dead_server(tmp_path):
     assert writer.sent[-1] == encode_touch("up", 20, 30, 100, 100)
 
 
-async def test_all_inputs_during_size_refresh_are_replayed_in_order(tmp_path):
+async def test_only_the_held_gesture_is_replayed_after_size_change(tmp_path):
     ctl, _ = _offline_client(tmp_path)
     gate = asyncio.Event()
     adb = ctl._adb
@@ -231,9 +230,9 @@ async def test_all_inputs_during_size_refresh_are_replayed_in_order(tmp_path):
 
     ctl._adb = slow_adb
     await ctl.handle({"type": "wheel", "x": 0.5, "y": 0.5, "dy": 1})  # これが取り直しのきっかけ
-    for a in ("down", "up", "down", "up"):  # 取り直し中のダブルタップ
+    for a in ("down", "up", "down", "move"):  # 取り直し中のタップと、押したままのドラッグ
         await ctl.handle({"type": "pointer", "action": a, "x": 0.1, "y": 0.1})
     gate.set()
     await ctl._refresh_task
-    assert ctl._writer.sent[5:] == [encode_scroll(500, 1000, 1000, 2000, -1.0)] + [
-        encode_touch(a, 100, 200, 1000, 2000) for a in ("down", "up", "down", "up")]
+    # 押したままのドラッグだけを送り直す(済んだタップと wheel は二重にしない)
+    assert ctl._writer.sent[5:] == [encode_touch(a, 100, 200, 1000, 2000) for a in ("down", "move")]

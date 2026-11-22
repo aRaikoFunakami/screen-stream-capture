@@ -265,8 +265,14 @@ class ScrcpyControlClient:
             return
         try:
             async with self._lock:
-                # 取り直しのきっかけ以降に送った pointer / wheel(どれも古いサイズで捨てられた)を順に送り直す
-                for e in self._pending:
+                # 指を押したままなら、取り直しのきっかけ以降の pointer / wheel(古いサイズで捨てられた)を順に送り直し、
+                # 操作を新しいサイズで続ける。指を離し終えていたら送り直さない: そのタップ自体が回転させた
+                # (端末は受け付けた)場合に、回転後の画面へもう一度タップしてしまうため(取りこぼしは人がやり直せる)
+                if self._down is None:
+                    logger.info("display size changed on %s; not replaying a finished gesture", self.serial)
+                    return
+                downs = [i for i, e in enumerate(self._pending) if e.get("action") == "down"]
+                for e in self._pending[downs[-1] if downs else 0:]:  # 押している操作の down から(前の済んだタップは除く)
                     await self._inject(e)
         except (OSError, RuntimeError):
             logger.warning("could not replay input after display size change on %s", self.serial)
