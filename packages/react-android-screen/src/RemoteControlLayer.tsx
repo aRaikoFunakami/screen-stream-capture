@@ -192,16 +192,12 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
             if (!composingRef.current) e.currentTarget.value = ''
             return
           }
-          // スマホのソフトキーボードは keydown の key が 'Unidentified' なので、削除は input で拾う
-          if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'deleteContentForward') {
-            send({ type: 'key', key: ne.inputType === 'deleteContentBackward' ? 'Backspace' : 'Delete' })
-            return
-          }
           const data = ne.data ?? e.currentTarget.value
           if (!composingRef.current && data) sendText(data)
           if (!composingRef.current) e.currentTarget.value = ''
         }}
         onKeyDown={(e) => {
+          // ponytail: デスクトップのキーボード前提。スマホのソフトキーボードの Backspace(key 'Unidentified')は送れない
           // Safari は compositionend の後に確定の keydown(keyCode 229)を出す。IME の Enter を端末へ送らない
           if (SPECIAL_KEYS.has(e.key) && !e.nativeEvent.isComposing && e.keyCode !== 229) {
             e.preventDefault()

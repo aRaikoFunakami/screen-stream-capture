@@ -152,6 +152,7 @@ class ScrcpyControlClient:
         self._clipboard_dirty = False  # 秘密を貼り付けた後、まだクリップボードを消せていない
         self._down: Optional[tuple[int, int]] = None  # 押したまま(up を送っていない)の位置
         self._refresh_task: Optional[asyncio.Task] = None
+        self._gesture: list[dict] = []  # 取り直し中に送った pointer(サイズが変わっていたら全部送り直す)
 
     @staticmethod
     def _free_port() -> int:
@@ -239,9 +240,15 @@ class ScrcpyControlClient:
             m = parse_control_message(raw)
         except ControlError as e:
             return {"type": "error", "seq": seq, "error": str(e)}
+        refreshing = bool(self._refresh_task and not self._refresh_task.done())
         async with self._lock:
             await self._inject(m)
-        if (m["type"] == "wheel" or m.get("action") == "down") and not (self._refresh_task and not self._refresh_task.done()):
+            if m["type"] == "pointer":
+                if m["action"] == "down":
+                    self._gesture = [m]
+                elif refreshing:
+                    self._gesture.append(m)
+        if (m["type"] == "wheel" or m.get("action") == "down") and not refreshing:
             # 回転に追従する(映像が無いので自分で取る)。adb(dumpsys)を待つと後続の move/up も遅れて
             # タップが長押しになるので、裏で取り直す
             self._refresh_task = asyncio.create_task(self._refresh_and_replay(m))
@@ -260,10 +267,9 @@ class ScrcpyControlClient:
             return
         try:
             async with self._lock:
-                released = self._down is None  # 取り直す間に指を離していた(タップ全体が捨てられた)
-                await self._inject(m)
-                if m["type"] == "pointer" and released:
-                    await self._inject({**m, "action": "up"})
+                # pointer は down 以降に送ったもの(move/up を含む。どれも古いサイズで捨てられた)を順に送り直す
+                for e in (self._gesture if m["type"] == "pointer" else [m]):
+                    await self._inject(e)
         except (OSError, RuntimeError):
             logger.warning("could not replay input after display size change on %s", self.serial)
 

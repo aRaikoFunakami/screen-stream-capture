@@ -149,7 +149,7 @@ async def test_pointer_down_rereads_display_size_and_scales(tmp_path):
     assert ctl._writer.sent[-2] == encode_touch("move", 100, 200, 1000, 2000)
 
 
-async def test_tap_released_before_size_refresh_is_replayed_as_tap(tmp_path):
+async def test_swipe_during_size_refresh_is_replayed_whole(tmp_path):
     ctl, _ = _offline_client(tmp_path)
     gate = asyncio.Event()
     adb = ctl._adb
@@ -160,11 +160,14 @@ async def test_tap_released_before_size_refresh_is_replayed_as_tap(tmp_path):
 
     ctl._adb = slow_adb
     await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
-    await ctl.handle({"type": "pointer", "action": "up", "x": 0.5, "y": 0.5})  # dumpsys を待たずに送れる
-    assert ctl._writer.sent == [encode_touch("down", 50, 50, 100, 100), encode_touch("up", 50, 50, 100, 100)]
+    await ctl.handle({"type": "pointer", "action": "move", "x": 0.5, "y": 0.2})
+    await ctl.handle({"type": "pointer", "action": "up", "x": 0.5, "y": 0.1})  # dumpsys を待たずに送れる
+    assert len(ctl._writer.sent) == 3
     gate.set()
     await ctl._refresh_task
-    assert ctl._writer.sent[2:] == [encode_touch("down", 500, 1000, 1000, 2000), encode_touch("up", 500, 1000, 1000, 2000)]
+    # スワイプ全体(down/move/up)を新しいサイズで送り直す(タップにしない)
+    assert ctl._writer.sent[3:] == [encode_touch("down", 500, 1000, 1000, 2000), encode_touch("move", 500, 400, 1000, 2000),
+                                    encode_touch("up", 500, 200, 1000, 2000)]
 
 
 async def test_invalid_message_returns_error_without_sending(tmp_path):
