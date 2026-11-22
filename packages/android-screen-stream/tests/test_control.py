@@ -9,6 +9,7 @@ import os
 import re
 import struct
 import subprocess
+import time
 
 import pytest
 
@@ -62,11 +63,13 @@ def _adb(*a):
 
 
 def _node_center(rid):
-    _adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
-    for n in re.findall(r"<node [^>]*>", _adb("shell", "cat", "/sdcard/ui.xml")):
-        if rid in n:
-            x1, y1, x2, y2 = map(int, re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n).groups())
-            return (x1 + x2) / 2, (y1 + y2) / 2
+    for _ in range(5):  # 起動直後の uiautomator dump は "null root node" で空になることがある
+        _adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
+        for n in re.findall(r"<node [^>]*>", _adb("shell", "cat", "/sdcard/ui.xml")):
+            if rid in n:
+                x1, y1, x2, y2 = map(int, re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n).groups())
+                return (x1 + x2) / 2, (y1 + y2) / 2
+        time.sleep(1)
     raise AssertionError(f"{rid} not found")
 
 
@@ -159,3 +162,31 @@ async def test_stop_clears_clipboard_left_dirty(tmp_path):
     await ctl.stop()
     assert writer.sent[-1] == encode_set_clipboard("", paste=False)
     assert ctl._clipboard_dirty is False
+
+
+async def test_size_refresh_failure_keeps_last_size(tmp_path):
+    ctl, _ = _offline_client(tmp_path, dumpsys="garbage")
+    r = await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
+    assert r["ok"] and ctl._writer.sent[-1] == encode_touch("down", 50, 50, 100, 100)
+
+
+async def test_stop_releases_held_touch_and_tolerates_dead_server(tmp_path):
+    ctl, _ = _offline_client(tmp_path)
+    await ctl.handle({"type": "pointer", "action": "move", "x": 0.2, "y": 0.3})
+    writer = ctl._writer
+    writer.close = lambda: None
+
+    async def wait_closed():
+        pass
+
+    writer.wait_closed = wait_closed
+
+    class _Dead:
+        returncode = 1
+
+        def terminate(self):
+            raise ProcessLookupError
+
+    ctl._server = _Dead()
+    await ctl.stop()  # 終わったプロセスでも例外にしない
+    assert writer.sent[-1] == encode_touch("up", 20, 30, 100, 100)

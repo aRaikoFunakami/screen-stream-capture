@@ -150,6 +150,7 @@ class ScrcpyControlClient:
         self._size: tuple[int, int] = (0, 0)
         self._lock = asyncio.Lock()
         self._clipboard_dirty = False  # 秘密を貼り付けた後、まだクリップボードを消せていない
+        self._down: Optional[tuple[int, int]] = None  # 押したまま(up を送っていない)の位置
 
     @staticmethod
     def _free_port() -> int:
@@ -239,10 +240,15 @@ class ScrcpyControlClient:
             return {"type": "error", "seq": seq, "error": str(e)}
         async with self._lock:
             if m["type"] in ("pointer", "wheel") and (m["type"] == "wheel" or m["action"] == "down"):
-                await self.refresh_size()  # 回転に追従する(映像が無いので自分で取る)
+                try:
+                    await self.refresh_size()  # 回転に追従する(映像が無いので自分で取る)
+                except RuntimeError:
+                    logger.warning("could not refresh display size on %s; using %s", self.serial, self._size)
             w, h = self._size
             if m["type"] == "pointer":
-                await self._send(encode_touch(m["action"], *self._xy(m["x"], m["y"]), w, h))
+                xy = self._xy(m["x"], m["y"])
+                await self._send(encode_touch(m["action"], *xy, w, h))
+                self._down = None if m["action"] == "up" else xy
             elif m["type"] == "wheel":
                 x, y = self._xy(m["x"], m["y"])
                 for _ in range(abs(m["dy"])):
@@ -271,6 +277,12 @@ class ScrcpyControlClient:
             logger.warning("could not clear device clipboard on %s", self.serial)
 
     async def stop(self) -> None:
+        if self._down and self._writer:
+            try:  # 押したまま切れた場合、端末に指が残らないように離す
+                await self._send(encode_touch("up", *self._down, *self._size))
+            except (OSError, RuntimeError):
+                pass
+            self._down = None
         if self._clipboard_dirty and self._writer:
             await self._clear_clipboard()  # 貼り付け後に消せていない場合の最後の機会
         if self._drain_task:
@@ -284,11 +296,15 @@ class ScrcpyControlClient:
                 pass
             self._writer = self._reader = None
         if self._server:
-            self._server.terminate()
             try:
-                await asyncio.wait_for(self._server.wait(), timeout=3)
-            except asyncio.TimeoutError:
-                self._server.kill()
+                if self._server.returncode is None:
+                    self._server.terminate()
+                    try:
+                        await asyncio.wait_for(self._server.wait(), timeout=3)
+                    except asyncio.TimeoutError:
+                        self._server.kill()
+            except ProcessLookupError:
+                pass  # 既に終わっている(端末が抜けた・scrcpy が落ちた)
             self._server = None
         try:
             await self._adb("forward", "--remove", f"tcp:{self.local_port}")

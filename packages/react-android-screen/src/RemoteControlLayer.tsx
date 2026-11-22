@@ -69,6 +69,7 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   const downRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })  // 映像の外で離したときに使う最後の位置
   const composingRef = useRef(false)
+  const wheelRef = useRef<{ dy: number; p: { x: number; y: number }; timer: ReturnType<typeof setTimeout> | null }>({ dy: 0, p: { x: 0, y: 0 }, timer: null })
   const readyRef = useRef(false)  // ready 受信後〜切断まで。個々のメッセージの error では止めない
   const [status, setStatus] = useState<RemoteControlStatus>('connecting')
 
@@ -140,12 +141,22 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
     send({ type: 'pointer', action: 'up', ...(point(e) ?? lastRef.current) })
     kbdRef.current?.focus()
   }
+  // トラックパッドは 1 秒に数十回 wheel を出すので、100ms ごとにまとめて送る(サーバは wheel ごとに画面サイズを読む)
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const p = point(e)
     if (!p) return
-    const dy = Math.max(-10, Math.min(10, Math.round(e.deltaY / 100) || Math.sign(e.deltaY)))
-    if (dy) send({ type: 'wheel', ...p, dy })
+    const w = wheelRef.current
+    w.dy += e.deltaY
+    w.p = p
+    if (w.timer) return
+    w.timer = setTimeout(() => {
+      const dy = Math.max(-10, Math.min(10, Math.round(w.dy / 100) || Math.sign(w.dy)))
+      w.dy = 0
+      w.timer = null
+      if (dy) send({ type: 'wheel', ...w.p, dy })
+    }, 100)
   }
+  useEffect(() => () => { const t = wheelRef.current.timer; if (t) clearTimeout(t) }, [])
 
   return (
     <div
@@ -156,6 +167,8 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onLostPointerCapture={onPointerUp}
       onWheel={onWheel}
     >
       <textarea
@@ -177,12 +190,18 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
             if (!composingRef.current) e.currentTarget.value = ''
             return
           }
+          // スマホのソフトキーボードは keydown の key が 'Unidentified' なので、削除は input で拾う
+          if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'deleteContentForward') {
+            send({ type: 'key', key: ne.inputType === 'deleteContentBackward' ? 'Backspace' : 'Delete' })
+            return
+          }
           const data = ne.data ?? e.currentTarget.value
           if (!composingRef.current && data) sendText(data)
           if (!composingRef.current) e.currentTarget.value = ''
         }}
         onKeyDown={(e) => {
-          if (SPECIAL_KEYS.has(e.key) && !e.nativeEvent.isComposing) {
+          // Safari は compositionend の後に確定の keydown(keyCode 229)を出す。IME の Enter を端末へ送らない
+          if (SPECIAL_KEYS.has(e.key) && !e.nativeEvent.isComposing && e.keyCode !== 229) {
             e.preventDefault()
             send({ type: 'key', key: e.key })
           }

@@ -92,3 +92,15 @@ def test_ready_ack_and_second_controller_is_4009(client, monkeypatch):
     with client.websocket_connect(URL) as ws:
         ws.send_json({"type": "auth", "token": "right"})
         assert ws.receive_json() == {"type": "ready"}
+
+
+def test_idle_connection_is_closed_and_device_released(client, monkeypatch):
+    monkeypatch.setenv("CONTROL_TOKEN", "right")
+    monkeypatch.setattr(control, "IDLE_TIMEOUT", 0.2)
+    with pytest.raises(WebSocketDisconnect) as e:
+        with client.websocket_connect(URL) as ws:
+            ws.send_json({"type": "auth", "token": "right"})
+            assert ws.receive_json() == {"type": "ready"}
+            ws.receive_text()
+    assert e.value.code == 1000
+    assert "emulator-5554" not in control._controlling

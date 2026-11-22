@@ -21,6 +21,7 @@ Protocol:
 - 4403: 認証失敗 / CONTROL_TOKEN 未設定
 - 4004: Device not found
 - 4009: 同じ端末を既に誰かが操作している
+- 1000: CONTROL_IDLE_TIMEOUT 秒(既定 600)入力が無ければ閉じる(端末を占有し続けない)
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 AUTH_TIMEOUT = 5.0
+IDLE_TIMEOUT = float(os.environ.get("CONTROL_IDLE_TIMEOUT", "600"))  # 入力が無いまま端末を占有し続けない
 _controlling: set[str] = set()  # 操作中の serial(同じ端末を同時に 1 接続だけ)
 
 
@@ -75,7 +77,10 @@ async def websocket_control(websocket: WebSocket, serial: str) -> None:
         await websocket.send_json({"type": "ready"})
         while True:
             try:
-                raw = json.loads(await websocket.receive_text())
+                raw = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=IDLE_TIMEOUT))
+            except asyncio.TimeoutError:
+                await websocket.close(code=1000, reason="idle timeout")
+                return
             except json.JSONDecodeError:
                 await websocket.send_json({"type": "error", "seq": None, "error": "invalid JSON"})
                 continue
@@ -89,6 +94,8 @@ async def websocket_control(websocket: WebSocket, serial: str) -> None:
         except RuntimeError:
             pass
     finally:
-        _controlling.discard(serial)
-        if client:
-            await client.stop()
+        try:
+            if client:
+                await client.stop()
+        finally:
+            _controlling.discard(serial)  # 古い scrcpy を止めてから次の操作を受け付ける

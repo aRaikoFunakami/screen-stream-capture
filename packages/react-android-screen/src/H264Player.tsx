@@ -238,7 +238,7 @@ export function H264Player({
 
       {/* 再接続ボタン */}
       {(status === 'disconnected' || status === 'error') && !autoReconnect && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70">
           <button
             onClick={connect}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
