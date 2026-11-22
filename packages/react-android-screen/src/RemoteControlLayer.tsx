@@ -25,6 +25,16 @@ export interface RemoteControlLayerProps {
   onStatus?: (status: RemoteControlStatus, detail?: string) => void
 }
 
+const MAX_TEXT_LEN = 256  // サーバ側(android-screen-stream)の 1 メッセージの上限
+
+/** 長い文字列(貼り付けなど)をサーバの上限以下に分ける。サロゲートペアは分けない。 */
+export function chunkText(text: string, size = MAX_TEXT_LEN): string[] {
+  const chars = Array.from(text)
+  const out: string[] = []
+  for (let i = 0; i < chars.length; i += size) out.push(chars.slice(i, i + size).join(''))
+  return out
+}
+
 const SPECIAL_KEYS = new Set(['Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'])
 
 /**
@@ -59,6 +69,7 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   const downRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })  // 映像の外で離したときに使う最後の位置
   const composingRef = useRef(false)
+  const readyRef = useRef(false)  // ready 受信後〜切断まで。個々のメッセージの error では止めない
   const [status, setStatus] = useState<RemoteControlStatus>('connecting')
 
   // onStatus は呼び出し側で毎回作り直されがちなので ref で持つ(依存に入れると描画のたびに WebSocket を張り直してしまう)
@@ -72,25 +83,36 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   useEffect(() => {
     const ws = new WebSocket(toAbsoluteWsUrl(controlUrl))
     wsRef.current = ws
+    readyRef.current = false
     report('connecting')
     ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: authToken ?? '' }))
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data as string)
-        if (m.type === 'ready') report('ready')
-        else if (m.type === 'error') report('error', String(m.error))
+        if (m.type === 'ready') { readyRef.current = true; report('ready') }
+        // 1 件の失敗(ack の代わりの error)は通知だけ。接続も ready の表示もそのまま使い続ける
+        else if (m.type === 'error') onStatusRef.current?.('error', String(m.error))
       } catch { /* 応答は JSON のみ。壊れた応答は無視する */ }
     }
-    ws.onclose = (ev) => report('closed', ev.reason || String(ev.code))
-    return () => { ws.close(); wsRef.current = null }
+    ws.onclose = (ev) => { readyRef.current = false; report('closed', ev.reason || String(ev.code)) }
+    return () => {
+      // 張り直し・アンマウント時は古い接続の通知を止める(新しい接続の状態を上書きしない)
+      ws.onopen = ws.onmessage = ws.onclose = null
+      ws.close()
+      if (wsRef.current === ws) wsRef.current = null
+      readyRef.current = false
+    }
   }, [controlUrl, authToken, report])
 
   const send = useCallback((msg: Record<string, unknown>) => {
     const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN && status === 'ready') {
+    if (ws && ws.readyState === WebSocket.OPEN && readyRef.current) {
       ws.send(JSON.stringify({ ...msg, seq: ++seqRef.current }))
     }
-  }, [status])
+  }, [])
+  const sendText = useCallback((text: string) => {
+    for (const t of chunkText(text)) send({ type: 'text', text: t })
+  }, [send])
 
   const point = useCallback((e: { clientX: number; clientY: number }) => {
     if (!videoEl) return null
@@ -144,13 +166,13 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
         onCompositionStart={() => { composingRef.current = true }}
         onCompositionEnd={(e) => {
           composingRef.current = false
-          if (e.data) send({ type: 'text', text: e.data })
+          if (e.data) sendText(e.data)
           e.currentTarget.value = ''
         }}
         onInput={(e) => {
           // 貼り付け(insertFromPaste)は data が null なので、textarea の値をそのまま送る
           const data = (e.nativeEvent as InputEvent).data ?? e.currentTarget.value
-          if (!composingRef.current && data) send({ type: 'text', text: data })
+          if (!composingRef.current && data) sendText(data)
           if (!composingRef.current) e.currentTarget.value = ''
         }}
         onKeyDown={(e) => {

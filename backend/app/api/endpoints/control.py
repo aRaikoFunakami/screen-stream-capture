@@ -45,20 +45,20 @@ AUTH_TIMEOUT = 5.0
 _controlling: set[str] = set()  # 操作中の serial(同じ端末を同時に 1 接続だけ)
 
 
-async def _authenticate(websocket: WebSocket) -> bool:
-    expected = os.environ.get("CONTROL_TOKEN", "")
+async def _authenticate(websocket: WebSocket, expected: str) -> bool:
     try:
         first = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT))
-    except (asyncio.TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+    except (asyncio.TimeoutError, json.JSONDecodeError, KeyError, WebSocketDisconnect):
         return False
     token = first.get("token") if isinstance(first, dict) and first.get("type") == "auth" else None
-    return bool(expected) and isinstance(token, str) and secrets.compare_digest(token, expected)
+    return isinstance(token, str) and secrets.compare_digest(token.encode(), expected.encode())
 
 
 @router.websocket("/ws/control/{serial}")
 async def websocket_control(websocket: WebSocket, serial: str) -> None:
     await websocket.accept()
-    if not await _authenticate(websocket):
+    expected = os.environ.get("CONTROL_TOKEN", "")
+    if not expected or not await _authenticate(websocket, expected):
         await websocket.close(code=4403, reason="Forbidden")
         return
     if await get_device_manager().get_device(serial) is None:
@@ -68,9 +68,9 @@ async def websocket_control(websocket: WebSocket, serial: str) -> None:
         await websocket.close(code=4009, reason="Device is already being controlled")
         return
     _controlling.add(serial)
-    settings = websocket.app.state.settings
-    client = ScrcpyControlClient(serial, settings.scrcpy_server_jar)
+    client: ScrcpyControlClient | None = None
     try:
+        client = ScrcpyControlClient(serial, websocket.app.state.settings.scrcpy_server_jar)
         await client.start()
         await websocket.send_json({"type": "ready"})
         while True:
@@ -90,4 +90,5 @@ async def websocket_control(websocket: WebSocket, serial: str) -> None:
             pass
     finally:
         _controlling.discard(serial)
-        await client.stop()
+        if client:
+            await client.stop()

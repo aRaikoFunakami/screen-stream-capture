@@ -119,6 +119,15 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 - **×** ボタンまたはオーバーレイ外クリックで閉じる
 - 「サーバーにも保存」にチェックを入れると、サーバー側にも JPEG が保存される
 
+### 端末の操作（WS /api/ws/control/{serial}）
+
+配信とは別の操作用 WebSocket で、タップ・スワイプ・ホイール・キー・文字を端末へ送れる（映像なしの scrcpy を別に起動するので、配信・録画には影響しない）。
+
+- 環境変数 `CONTROL_TOKEN` を設定したときだけ使える。未設定なら 4403 で閉じる。
+- 接続直後の最初のメッセージで `{"type":"auth","token":"<CONTROL_TOKEN>"}` を 5 秒以内に送る。不一致は 4403、端末が無ければ 4004、同じ端末を操作中なら 4009。
+- 成功すると `{"type":"ready"}`。以後 `pointer` / `wheel` / `key` / `text`（座標は 0..1）を送り、各メッセージに `ack` か `error` が返る。
+- 配信より強い権限なので、ブラウザから直接ではなく、認可済みの backend から中継して使う。React 側の部品は `RemoteControlLayer`（packages/react-android-screen）。
+
 ### API ドキュメント
 
 バックエンド API ドキュメント（FastAPI 自動生成）:

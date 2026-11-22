@@ -112,3 +112,47 @@ async def test_clipboard_is_cleared_even_when_paste_is_cancelled(tmp_path):
     await asyncio.sleep(0.05)
     assert ctl._writer.sent[-1] == encode_set_clipboard("", paste=False)
     assert ctl._clipboard_dirty is False
+
+
+def _offline_client(tmp_path, dumpsys="Display: mDisplayId=0\n  cur=1000x2000\n"):
+    jar = tmp_path / "s.jar"
+    jar.write_bytes(b"")
+    ctl = ScrcpyControlClient("dummy", str(jar))
+    ctl._writer, ctl._size = _FakeWriter(), (100, 100)
+    calls = []
+
+    async def fake_adb(*args):
+        calls.append(args)
+        return dumpsys if "dumpsys" in args else ""
+
+    ctl._adb = fake_adb
+    return ctl, calls
+
+
+async def test_pointer_down_rereads_display_size_and_scales(tmp_path):
+    ctl, calls = _offline_client(tmp_path)
+    assert (await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 1.0, "seq": 3})) == {"type": "ack", "seq": 3, "ok": True}
+    assert ctl._writer.sent[-1] == encode_touch("down", 500, 1999, 1000, 2000)  # 端まで押しても範囲内
+    await ctl.handle({"type": "pointer", "action": "move", "x": 0.1, "y": 0.1})
+    assert sum("dumpsys" in c for c in calls) == 1  # move では取り直さない
+
+
+async def test_invalid_message_returns_error_without_sending(tmp_path):
+    ctl, _ = _offline_client(tmp_path)
+    r = await ctl.handle({"type": "key", "key": "F1", "seq": 9})
+    assert r["type"] == "error" and r["seq"] == 9 and ctl._writer.sent == []
+
+
+async def test_stop_clears_clipboard_left_dirty(tmp_path):
+    ctl, _ = _offline_client(tmp_path)
+    ctl._clipboard_dirty = True  # 貼り付け後に消せなかった状態
+    writer = ctl._writer
+    writer.close = lambda: None
+
+    async def wait_closed():
+        pass
+
+    writer.wait_closed = wait_closed
+    await ctl.stop()
+    assert writer.sent[-1] == encode_set_clipboard("", paste=False)
+    assert ctl._clipboard_dirty is False
