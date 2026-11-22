@@ -83,8 +83,14 @@ def parse_control_message(msg: object) -> dict:
 
 
 def parse_display_size(dumpsys: str) -> tuple[int, int]:
-    """`dumpsys window displays` の出力から今の向きの画面サイズ(cur=WxH)を取り出す."""
-    m = re.search(r"\bcur=(\d+)x(\d+)", dumpsys)
+    """`dumpsys window displays` の出力から、主ディスプレイ(mDisplayId=0)の今の向きの画面サイズ(cur=WxH)を取り出す.
+
+    仮想ディスプレイ(画面共有・他ツールが作るもの)が先に並ぶことがあるため、最初の cur= ではなく
+    mDisplayId=0 の区画の cur= を使う(UI 組み込みの確認で、先頭の仮想ディスプレイ 1080x672 を読んでタップが捨てられた)。
+    """
+    blocks = re.split(r"(?=Display: mDisplayId=)", dumpsys)
+    main = next((b for b in blocks if re.match(r"Display: mDisplayId=0\b", b)), dumpsys)
+    m = re.search(r"\bcur=(\d+)x(\d+)", main)
     if not m:
         raise RuntimeError("could not read current display size (cur=WxH) from dumpsys window displays")
     return int(m.group(1)), int(m.group(2))
