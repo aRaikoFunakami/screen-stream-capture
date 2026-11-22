@@ -28,6 +28,9 @@ def test_touch_layout_matches_scrcpy3():
 
 def test_other_layouts():
     assert len(encode_scroll(1, 2, 3, 4, -1.0)) == 21
+    # 1 ノッチ = 0x7FFF/16(サーバ側で 16 倍される)。16 ノッチで上限
+    assert struct.unpack(">BiiHHhhi", encode_scroll(1, 2, 3, 4, 1.0))[6] == 0x7FFF // 16
+    assert struct.unpack(">BiiHHhhi", encode_scroll(1, 2, 3, 4, -99))[6] == -0x7FFF
     assert encode_keycode(0, 66) == struct.pack(">BBiii", 0, 0, 66, 0, 0)
     assert encode_text("ab") == b"\x01\x00\x00\x00\x02ab"
     clip = encode_set_clipboard("日", paste=True)

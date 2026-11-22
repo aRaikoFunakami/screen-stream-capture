@@ -104,7 +104,8 @@ def encode_touch(action: str, x: int, y: int, w: int, h: int) -> bytes:
 
 
 def encode_scroll(x: int, y: int, w: int, h: int, vscroll: float) -> bytes:
-    v = max(-1.0, min(1.0, vscroll))
+    """vscroll はノッチ数(-16..16). scrcpy 2.x/3.x のサーバは i16 固定小数を 16 倍して読むので、16 で割って送る."""
+    v = max(-1.0, min(1.0, vscroll / 16))
     return struct.pack(">BiiHHhhi", _MSG_INJECT_SCROLL, x, y, w, h, 0, int(v * 0x7FFF), 0)
 
 

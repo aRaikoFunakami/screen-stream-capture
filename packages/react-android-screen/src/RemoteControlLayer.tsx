@@ -171,7 +171,13 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
         }}
         onInput={(e) => {
           // 貼り付け(insertFromPaste)は data が null なので、textarea の値をそのまま送る
-          const data = (e.nativeEvent as InputEvent).data ?? e.currentTarget.value
+          const ne = e.nativeEvent as InputEvent
+          // IME の確定は compositionend で送る。Safari は compositionend の後に確定分の input も出すので二重に送らない
+          if (ne.isComposing || ne.inputType === 'insertCompositionText' || ne.inputType === 'insertFromComposition') {
+            if (!composingRef.current) e.currentTarget.value = ''
+            return
+          }
+          const data = ne.data ?? e.currentTarget.value
           if (!composingRef.current && data) sendText(data)
           if (!composingRef.current) e.currentTarget.value = ''
         }}
