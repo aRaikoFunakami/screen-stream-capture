@@ -61,10 +61,13 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   const composingRef = useRef(false)
   const [status, setStatus] = useState<RemoteControlStatus>('connecting')
 
+  // onStatus は呼び出し側で毎回作り直されがちなので ref で持つ(依存に入れると描画のたびに WebSocket を張り直してしまう)
+  const onStatusRef = useRef(onStatus)
+  useEffect(() => { onStatusRef.current = onStatus }, [onStatus])
   const report = useCallback((s: RemoteControlStatus, detail?: string) => {
     setStatus(s)
-    onStatus?.(s, detail)
-  }, [onStatus])
+    onStatusRef.current?.(s, detail)
+  }, [])
 
   useEffect(() => {
     const ws = new WebSocket(toAbsoluteWsUrl(controlUrl))
