@@ -133,6 +133,23 @@ class StreamSession:
     def subscriber_count(self) -> int: ...
 ```
 
+## ScrcpyControlClient（端末の操作）
+
+配信とは別の scrcpy-server を `video=false`・`control=true`・固有の scid で起動し、制御メッセージ（JSON）を scrcpy の制御プロトコルに変換して注入する。配信・録画と同時に使える。
+
+```python
+from android_screen_stream import ScrcpyControlClient
+
+async with ScrcpyControlClient("emulator-5554", server_jar="vendor/scrcpy-server.jar") as ctl:
+    await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
+    await ctl.handle({"type": "pointer", "action": "up", "x": 0.5, "y": 0.5})
+    await ctl.handle({"type": "text", "text": "日本語"})  # ASCII 以外は貼り付け→直後にクリップボードを空にする
+```
+
+- メッセージ: `pointer`（down/move/up, x, y）/ `wheel`（x, y, dy）/ `key`（Enter など）/ `text`（256 文字まで）。座標は 0..1。
+- 画面サイズは `dumpsys window displays` の主ディスプレイ（mDisplayId=0）の `cur=` を、pointer の down と wheel のたびに読み直す。
+- 入力した文字の内容はログに出さない。
+
 ## ライセンス
 
 MIT

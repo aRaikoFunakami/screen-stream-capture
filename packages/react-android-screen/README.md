@@ -52,6 +52,26 @@ Notes:
 - Device rotation / resolution change is handled internally. Consumers typically do not need to add any special code.
 - Layout is responsive to the stream aspect ratio; if your grid/cards show extra whitespace after rotation, adjust the app-side layout (CSS/grid rules).
 
+### RemoteControlLayer（端末の操作）
+
+`H264Player` の children に置くと、映像の上でのクリック/タップ・ドラッグ・ホイール・キー入力・文字（IME 確定・貼り付けを含む）を操作用 WebSocket（backend の `WS /api/ws/control/{serial}`）へ送る。座標は object-fit の余白を除いた映像領域に対する 0..1。
+
+```tsx
+const [video, setVideo] = useState<HTMLVideoElement | null>(null)
+
+<H264Player wsUrl="/api/ws/stream/emulator-5554" onVideoRef={(r) => setVideo(r.current)}>
+  <RemoteControlLayer
+    controlUrl="/api/ws/control/emulator-5554"   // 認可済みの中継先を指定する
+    authToken={token}                             // 接続直後の auth メッセージで送る（URL には載せない）
+    videoEl={video}
+    onStatus={(s, detail) => console.log(s, detail)}  // 'connecting' | 'ready' | 'closed' | 'error'
+  />
+</H264Player>
+```
+
+- `ready` を受けるまで入力は送らない。個々のメッセージの失敗は `onStatus('error', detail)` で知らせ、接続は使い続ける。
+- 長い文字列は 256 文字ずつに分けて送る。
+
 ### useAndroidStream Hook
 
 For more control, use the custom hook:
