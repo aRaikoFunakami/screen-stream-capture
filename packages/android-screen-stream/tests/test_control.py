@@ -36,6 +36,10 @@ def test_other_layouts():
 
 def test_display_size_from_dumpsys():
     assert parse_display_size("  init=2560x1600 420dpi cur=1600x2560 app=1600x2464") == (1600, 2560)
+    # 仮想ディスプレイが先に並んでも主ディスプレイ(mDisplayId=0)を使う(実機の出力の形)
+    two = ("Display: mDisplayId=17\n    init=1080x672 1dpi cur=1080x672 app=1080x672\n"
+           "Display: mDisplayId=0 (organized)\n    init=2560x1600 320dpi cur=2560x1600 app=2560x1600\n")
+    assert parse_display_size(two) == (2560, 1600)
     with pytest.raises(RuntimeError):
         parse_display_size("no size here")
 
