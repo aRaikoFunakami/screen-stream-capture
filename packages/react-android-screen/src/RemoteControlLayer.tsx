@@ -143,9 +143,10 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
     kbdRef.current?.focus({ preventScroll: true })
   }
   // トラックパッドは 1 秒に数十回 wheel を出すので、100ms ごとにまとめて送る(サーバは wheel ごとに画面サイズを読む)
-  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+  const onWheel = (e: WheelEvent) => {
     const p = point(e)
     if (!p) return
+    e.preventDefault()  // 端末だけをスクロールし、外側のページは動かさない
     const w = wheelRef.current
     w.dy += e.deltaY
     w.p = p
@@ -157,10 +158,24 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
       if (dy) send({ type: 'wheel', ...w.p, dy })
     }, 100)
   }
-  useEffect(() => () => { const t = wheelRef.current.timer; if (t) clearTimeout(t) }, [])
+  // React の onWheel は passive で preventDefault できないので、ネイティブの listener を付ける
+  const layerRef = useRef<HTMLDivElement | null>(null)
+  const onWheelRef = useRef(onWheel)
+  onWheelRef.current = onWheel
+  useEffect(() => {
+    const el = layerRef.current
+    const h = (e: WheelEvent) => onWheelRef.current(e)
+    el?.addEventListener('wheel', h, { passive: false })
+    return () => {
+      el?.removeEventListener('wheel', h)
+      const t = wheelRef.current.timer
+      if (t) clearTimeout(t)
+    }
+  }, [])
 
   return (
     <div
+      ref={layerRef}
       data-testid="remote-control-layer"
       data-status={status}
       className="absolute inset-0 z-10"
@@ -171,7 +186,6 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
       onPointerCancel={onPointerUp}
       onContextMenu={(e) => e.preventDefault()}
       onLostPointerCapture={onPointerUp}
-      onWheel={onWheel}
     >
       <textarea
         ref={kbdRef}

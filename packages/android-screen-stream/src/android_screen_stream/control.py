@@ -152,7 +152,7 @@ class ScrcpyControlClient:
         self._clipboard_dirty = False  # 秘密を貼り付けた後、まだクリップボードを消せていない
         self._down: Optional[tuple[int, int]] = None  # 押したまま(up を送っていない)の位置
         self._refresh_task: Optional[asyncio.Task] = None
-        self._gesture: list[dict] = []  # 取り直し中に送った pointer(サイズが変わっていたら全部送り直す)
+        self._pending: list[dict] = []  # 取り直し中に送った pointer / wheel(サイズが変わっていたら順に全部送り直す)
 
     @staticmethod
     def _free_port() -> int:
@@ -243,20 +243,18 @@ class ScrcpyControlClient:
         refreshing = bool(self._refresh_task and not self._refresh_task.done())
         async with self._lock:
             await self._inject(m)
-            if m["type"] == "pointer":
-                if m["action"] == "down":
-                    self._gesture = [m]
-                elif refreshing:
-                    self._gesture.append(m)
+            if refreshing and m["type"] in ("pointer", "wheel"):
+                self._pending.append(m)
         if (m["type"] == "wheel" or m.get("action") == "down") and not refreshing:
+            self._pending = [m]
             # 回転に追従する(映像が無いので自分で取る)。adb(dumpsys)を待つと後続の move/up も遅れて
             # タップが長押しになるので、裏で取り直す
-            self._refresh_task = asyncio.create_task(self._refresh_and_replay(m))
+            self._refresh_task = asyncio.create_task(self._refresh_and_replay())
         logger.debug("control %s", m["type"])  # 内容(text)は出さない
         return {"type": "ack", "seq": seq, "ok": True}
 
-    async def _refresh_and_replay(self, m: dict) -> None:
-        """画面サイズを取り直し、変わっていれば(古いサイズの操作は scrcpy が捨てたので)m を新しいサイズで送り直す."""
+    async def _refresh_and_replay(self) -> None:
+        """画面サイズを取り直し、変わっていれば(古いサイズの操作は scrcpy が捨てたので)取り直し中の操作を送り直す."""
         before = self._size
         try:
             await self.refresh_size()
@@ -267,8 +265,8 @@ class ScrcpyControlClient:
             return
         try:
             async with self._lock:
-                # pointer は down 以降に送ったもの(move/up を含む。どれも古いサイズで捨てられた)を順に送り直す
-                for e in (self._gesture if m["type"] == "pointer" else [m]):
+                # 取り直しのきっかけ以降に送った pointer / wheel(どれも古いサイズで捨てられた)を順に送り直す
+                for e in self._pending:
                     await self._inject(e)
         except (OSError, RuntimeError):
             logger.warning("could not replay input after display size change on %s", self.serial)

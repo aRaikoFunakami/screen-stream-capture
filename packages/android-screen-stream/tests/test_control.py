@@ -218,3 +218,22 @@ async def test_stop_releases_held_touch_and_tolerates_dead_server(tmp_path):
     ctl._server = _Dead()
     await ctl.stop()  # 終わったプロセスでも例外にしない
     assert writer.sent[-1] == encode_touch("up", 20, 30, 100, 100)
+
+
+async def test_all_inputs_during_size_refresh_are_replayed_in_order(tmp_path):
+    ctl, _ = _offline_client(tmp_path)
+    gate = asyncio.Event()
+    adb = ctl._adb
+
+    async def slow_adb(*args):
+        await gate.wait()
+        return await adb(*args)
+
+    ctl._adb = slow_adb
+    await ctl.handle({"type": "wheel", "x": 0.5, "y": 0.5, "dy": 1})  # これが取り直しのきっかけ
+    for a in ("down", "up", "down", "up"):  # 取り直し中のダブルタップ
+        await ctl.handle({"type": "pointer", "action": a, "x": 0.1, "y": 0.1})
+    gate.set()
+    await ctl._refresh_task
+    assert ctl._writer.sent[5:] == [encode_scroll(500, 1000, 1000, 2000, -1.0)] + [
+        encode_touch(a, 100, 200, 1000, 2000) for a in ("down", "up", "down", "up")]
