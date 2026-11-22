@@ -138,7 +138,8 @@ def _offline_client(tmp_path, dumpsys="Display: mDisplayId=0\n  cur=1000x2000\n"
 async def test_pointer_down_rereads_display_size_and_scales(tmp_path):
     ctl, calls = _offline_client(tmp_path)
     assert (await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 1.0, "seq": 3})) == {"type": "ack", "seq": 3, "ok": True}
-    assert ctl._writer.sent[-1] == encode_touch("down", 500, 1999, 1000, 2000)  # 端まで押しても範囲内
+    # 先に今のサイズで送り(押し始めを遅らせない)、サイズが変わっていたので新しいサイズで送り直す
+    assert ctl._writer.sent == [encode_touch("down", 50, 99, 100, 100), encode_touch("down", 500, 1999, 1000, 2000)]
     await ctl.handle({"type": "pointer", "action": "move", "x": 0.1, "y": 0.1})
     assert sum("dumpsys" in c for c in calls) == 1  # move では取り直さない
 

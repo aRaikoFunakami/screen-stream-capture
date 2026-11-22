@@ -66,7 +66,7 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   const wsRef = useRef<WebSocket | null>(null)
   const kbdRef = useRef<HTMLTextAreaElement | null>(null)
   const seqRef = useRef(0)
-  const downRef = useRef(false)
+  const downRef = useRef<number | null>(null)  // 押している pointerId(1 本指のみ)
   const lastRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })  // 映像の外で離したときに使う最後の位置
   const composingRef = useRef(false)
   const wheelRef = useRef<{ dy: number; p: { x: number; y: number }; timer: ReturnType<typeof setTimeout> | null }>({ dy: 0, p: { x: 0, y: 0 }, timer: null })
@@ -121,25 +121,26 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
   }, [videoEl, fit])
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!e.isPrimary || e.button !== 0) return  // 右・中クリック、2 本目の指はタップにしない
     const p = point(e)
     if (!p) return
     e.preventDefault()
-    downRef.current = true
+    downRef.current = e.pointerId
     lastRef.current = p
     e.currentTarget.setPointerCapture(e.pointerId)
     send({ type: 'pointer', action: 'down', ...p })
-    kbdRef.current?.focus()
+    kbdRef.current?.focus({ preventScroll: true })
   }
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!downRef.current) return
+    if (downRef.current !== e.pointerId) return
     const p = point(e)
     if (p) { lastRef.current = p; send({ type: 'pointer', action: 'move', ...p }) }
   }
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!downRef.current) return
-    downRef.current = false
+    if (downRef.current !== e.pointerId) return
+    downRef.current = null
     send({ type: 'pointer', action: 'up', ...(point(e) ?? lastRef.current) })
-    kbdRef.current?.focus()
+    kbdRef.current?.focus({ preventScroll: true })
   }
   // トラックパッドは 1 秒に数十回 wheel を出すので、100ms ごとにまとめて送る(サーバは wheel ごとに画面サイズを読む)
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -168,6 +169,7 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={(e) => e.preventDefault()}
       onLostPointerCapture={onPointerUp}
       onWheel={onWheel}
     >

@@ -20,7 +20,7 @@ Protocol:
 エラー:
 - 4403: 認証失敗 / CONTROL_TOKEN 未設定
 - 4004: Device not found
-- 4009: 同じ端末を既に誰かが操作している
+- 4009: 同じ端末を既に誰かが操作している(前の接続の後始末は SLOT_WAIT 秒まで待つ)
 - 1000: CONTROL_IDLE_TIMEOUT 秒(既定 600)入力が無ければ閉じる(端末を占有し続けない)
 """
 
@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 AUTH_TIMEOUT = 5.0
+SLOT_WAIT = 5.0  # 直前の接続の後始末(scrcpy の停止)を待つ時間。張り直し・再読み込みで 4009 にしない
 IDLE_TIMEOUT = float(os.environ.get("CONTROL_IDLE_TIMEOUT", "600"))  # 入力が無いまま端末を占有し続けない
 _controlling: set[str] = set()  # 操作中の serial(同じ端末を同時に 1 接続だけ)
 
@@ -66,6 +67,10 @@ async def websocket_control(websocket: WebSocket, serial: str) -> None:
     if await get_device_manager().get_device(serial) is None:
         await websocket.close(code=4004, reason=f"Device {serial} not found")
         return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SLOT_WAIT
+    while serial in _controlling and loop.time() < deadline:
+        await asyncio.sleep(0.1)
     if serial in _controlling:
         await websocket.close(code=4009, reason="Device is already being controlled")
         return

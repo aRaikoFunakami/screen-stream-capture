@@ -80,6 +80,7 @@ def test_unknown_device_is_4004(client, monkeypatch):
 
 def test_ready_ack_and_second_controller_is_4009(client, monkeypatch):
     monkeypatch.setenv("CONTROL_TOKEN", "right")
+    monkeypatch.setattr(control, "SLOT_WAIT", 0.2)
     with client.websocket_connect(URL) as ws:
         ws.send_json({"type": "auth", "token": "right"})
         assert ws.receive_json() == {"type": "ready"}

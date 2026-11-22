@@ -239,35 +239,43 @@ class ScrcpyControlClient:
         except ControlError as e:
             return {"type": "error", "seq": seq, "error": str(e)}
         async with self._lock:
-            if m["type"] in ("pointer", "wheel") and (m["type"] == "wheel" or m["action"] == "down"):
+            await self._inject(m)
+            if m["type"] == "wheel" or m.get("action") == "down":
+                # 回転に追従する(映像が無いので自分で取る)。adb を待ってから送ると押し始めが遅れて長押し・ドラッグが
+                # 縮むので、先に今のサイズで送り、サイズが変わっていたら(scrcpy が捨てたので)新しいサイズで送り直す
+                before = self._size
                 try:
-                    await self.refresh_size()  # 回転に追従する(映像が無いので自分で取る)
+                    await self.refresh_size()
                 except RuntimeError:
                     logger.warning("could not refresh display size on %s; using %s", self.serial, self._size)
-            w, h = self._size
-            if m["type"] == "pointer":
-                xy = self._xy(m["x"], m["y"])
-                await self._send(encode_touch(m["action"], *xy, w, h))
-                self._down = None if m["action"] == "up" else xy
-            elif m["type"] == "wheel":
-                x, y = self._xy(m["x"], m["y"])
-                for _ in range(abs(m["dy"])):
-                    await self._send(encode_scroll(x, y, w, h, -1.0 if m["dy"] > 0 else 1.0))
-            elif m["type"] == "key":
-                code = _KEYCODES[m["key"]]
-                await self._send(encode_keycode(0, code) + encode_keycode(1, code))
-            elif m["text"].isascii():
-                await self._send(encode_text(m["text"]))
-            else:
-                self._clipboard_dirty = True
-                try:
-                    await self._send(encode_set_clipboard(m["text"], paste=True))
-                    await asyncio.sleep(0.3)  # 貼り付けが終わってから消す
-                finally:
-                    # キャンセル・例外でも必ず消す(秘密の値を端末のクリップボードに残さない)
-                    await asyncio.shield(self._clear_clipboard())
+                if self._size != before:
+                    await self._inject(m)
         logger.debug("control %s", m["type"])  # 内容(text)は出さない
         return {"type": "ack", "seq": seq, "ok": True}
+
+    async def _inject(self, m: dict) -> None:
+        w, h = self._size
+        if m["type"] == "pointer":
+            xy = self._xy(m["x"], m["y"])
+            await self._send(encode_touch(m["action"], *xy, w, h))
+            self._down = None if m["action"] == "up" else xy
+        elif m["type"] == "wheel":
+            x, y = self._xy(m["x"], m["y"])
+            for _ in range(abs(m["dy"])):
+                await self._send(encode_scroll(x, y, w, h, -1.0 if m["dy"] > 0 else 1.0))
+        elif m["type"] == "key":
+            code = _KEYCODES[m["key"]]
+            await self._send(encode_keycode(0, code) + encode_keycode(1, code))
+        elif m["text"].isascii():
+            await self._send(encode_text(m["text"]))
+        else:
+            self._clipboard_dirty = True
+            try:
+                await self._send(encode_set_clipboard(m["text"], paste=True))
+                await asyncio.sleep(0.3)  # 貼り付けが終わってから消す
+            finally:
+                # キャンセル・例外でも必ず消す(秘密の値を端末のクリップボードに残さない)
+                await asyncio.shield(self._clear_clipboard())
 
     async def _clear_clipboard(self) -> None:
         try:
