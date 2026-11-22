@@ -151,6 +151,7 @@ class ScrcpyControlClient:
         self._lock = asyncio.Lock()
         self._clipboard_dirty = False  # 秘密を貼り付けた後、まだクリップボードを消せていない
         self._down: Optional[tuple[int, int]] = None  # 押したまま(up を送っていない)の位置
+        self._refresh_task: Optional[asyncio.Task] = None
 
     @staticmethod
     def _free_port() -> int:
@@ -240,18 +241,31 @@ class ScrcpyControlClient:
             return {"type": "error", "seq": seq, "error": str(e)}
         async with self._lock:
             await self._inject(m)
-            if m["type"] == "wheel" or m.get("action") == "down":
-                # 回転に追従する(映像が無いので自分で取る)。adb を待ってから送ると押し始めが遅れて長押し・ドラッグが
-                # 縮むので、先に今のサイズで送り、サイズが変わっていたら(scrcpy が捨てたので)新しいサイズで送り直す
-                before = self._size
-                try:
-                    await self.refresh_size()
-                except RuntimeError:
-                    logger.warning("could not refresh display size on %s; using %s", self.serial, self._size)
-                if self._size != before:
-                    await self._inject(m)
+        if (m["type"] == "wheel" or m.get("action") == "down") and not (self._refresh_task and not self._refresh_task.done()):
+            # 回転に追従する(映像が無いので自分で取る)。adb(dumpsys)を待つと後続の move/up も遅れて
+            # タップが長押しになるので、裏で取り直す
+            self._refresh_task = asyncio.create_task(self._refresh_and_replay(m))
         logger.debug("control %s", m["type"])  # 内容(text)は出さない
         return {"type": "ack", "seq": seq, "ok": True}
+
+    async def _refresh_and_replay(self, m: dict) -> None:
+        """画面サイズを取り直し、変わっていれば(古いサイズの操作は scrcpy が捨てたので)m を新しいサイズで送り直す."""
+        before = self._size
+        try:
+            await self.refresh_size()
+        except RuntimeError:
+            logger.warning("could not refresh display size on %s; using %s", self.serial, before)
+            return
+        if self._size == before:
+            return
+        try:
+            async with self._lock:
+                released = self._down is None  # 取り直す間に指を離していた(タップ全体が捨てられた)
+                await self._inject(m)
+                if m["type"] == "pointer" and released:
+                    await self._inject({**m, "action": "up"})
+        except (OSError, RuntimeError):
+            logger.warning("could not replay input after display size change on %s", self.serial)
 
     async def _inject(self, m: dict) -> None:
         w, h = self._size
@@ -285,6 +299,9 @@ class ScrcpyControlClient:
             logger.warning("could not clear device clipboard on %s", self.serial)
 
     async def stop(self) -> None:
+        if self._refresh_task:
+            self._refresh_task.cancel()
+            self._refresh_task = None
         if self._down and self._writer:
             try:  # 押したまま切れた場合、端末に指が残らないように離す
                 await self._send(encode_touch("up", *self._down, *self._size))

@@ -138,10 +138,33 @@ def _offline_client(tmp_path, dumpsys="Display: mDisplayId=0\n  cur=1000x2000\n"
 async def test_pointer_down_rereads_display_size_and_scales(tmp_path):
     ctl, calls = _offline_client(tmp_path)
     assert (await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 1.0, "seq": 3})) == {"type": "ack", "seq": 3, "ok": True}
-    # 先に今のサイズで送り(押し始めを遅らせない)、サイズが変わっていたので新しいサイズで送り直す
+    # 先に今のサイズで送り(dumpsys を待たない)、裏で取り直してサイズが変わっていたので新しいサイズで送り直す
+    await ctl._refresh_task
     assert ctl._writer.sent == [encode_touch("down", 50, 99, 100, 100), encode_touch("down", 500, 1999, 1000, 2000)]
     await ctl.handle({"type": "pointer", "action": "move", "x": 0.1, "y": 0.1})
     assert sum("dumpsys" in c for c in calls) == 1  # move では取り直さない
+    await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
+    await ctl._refresh_task
+    assert ctl._writer.sent[-1] == encode_touch("down", 500, 1000, 1000, 2000)  # サイズが同じなら送り直さない
+    assert ctl._writer.sent[-2] == encode_touch("move", 100, 200, 1000, 2000)
+
+
+async def test_tap_released_before_size_refresh_is_replayed_as_tap(tmp_path):
+    ctl, _ = _offline_client(tmp_path)
+    gate = asyncio.Event()
+    adb = ctl._adb
+
+    async def slow_adb(*args):
+        await gate.wait()  # dumpsys が遅い間に up まで届く
+        return await adb(*args)
+
+    ctl._adb = slow_adb
+    await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
+    await ctl.handle({"type": "pointer", "action": "up", "x": 0.5, "y": 0.5})  # dumpsys を待たずに送れる
+    assert ctl._writer.sent == [encode_touch("down", 50, 50, 100, 100), encode_touch("up", 50, 50, 100, 100)]
+    gate.set()
+    await ctl._refresh_task
+    assert ctl._writer.sent[2:] == [encode_touch("down", 500, 1000, 1000, 2000), encode_touch("up", 500, 1000, 1000, 2000)]
 
 
 async def test_invalid_message_returns_error_without_sending(tmp_path):
@@ -168,7 +191,8 @@ async def test_stop_clears_clipboard_left_dirty(tmp_path):
 async def test_size_refresh_failure_keeps_last_size(tmp_path):
     ctl, _ = _offline_client(tmp_path, dumpsys="garbage")
     r = await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
-    assert r["ok"] and ctl._writer.sent[-1] == encode_touch("down", 50, 50, 100, 100)
+    await ctl._refresh_task
+    assert r["ok"] and ctl._writer.sent == [encode_touch("down", 50, 50, 100, 100)]
 
 
 async def test_stop_releases_held_touch_and_tolerates_dead_server(tmp_path):
