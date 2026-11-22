@@ -81,3 +81,30 @@ async def test_tap_and_type_ascii_and_japanese_on_device():
         _adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
         assert 'text="wifi日本"' in _adb("shell", "cat", "/sdcard/ui.xml")
     _adb("shell", "input", "keyevent", "HOME")
+
+
+class _FakeWriter:
+    def __init__(self, fail_after=None):
+        self.sent, self.fail_after = [], fail_after
+
+    def write(self, data):
+        self.sent.append(data)
+
+    async def drain(self):
+        if self.fail_after is not None and len(self.sent) > self.fail_after:
+            raise OSError("broken pipe")
+
+
+async def test_clipboard_is_cleared_even_when_paste_is_cancelled(tmp_path):
+    jar = tmp_path / "s.jar"
+    jar.write_bytes(b"")
+    ctl = ScrcpyControlClient("dummy", str(jar))
+    ctl._writer, ctl._size = _FakeWriter(), (100, 100)
+    task = asyncio.create_task(ctl.handle({"type": "text", "text": "秘密"}))
+    await asyncio.sleep(0.05)  # 貼り付けを送って待っている最中に
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0.05)
+    assert ctl._writer.sent[-1] == encode_set_clipboard("", paste=False)
+    assert ctl._clipboard_dirty is False

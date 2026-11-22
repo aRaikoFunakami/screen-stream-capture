@@ -142,6 +142,7 @@ class ScrcpyControlClient:
         self._drain_task: Optional[asyncio.Task] = None
         self._size: tuple[int, int] = (0, 0)
         self._lock = asyncio.Lock()
+        self._clipboard_dirty = False  # 秘密を貼り付けた後、まだクリップボードを消せていない
 
     @staticmethod
     def _free_port() -> int:
@@ -245,13 +246,26 @@ class ScrcpyControlClient:
             elif m["text"].isascii():
                 await self._send(encode_text(m["text"]))
             else:
-                await self._send(encode_set_clipboard(m["text"], paste=True))
-                await asyncio.sleep(0.3)  # 貼り付けが終わってから消す
-                await self._send(encode_set_clipboard("", paste=False))
+                self._clipboard_dirty = True
+                try:
+                    await self._send(encode_set_clipboard(m["text"], paste=True))
+                    await asyncio.sleep(0.3)  # 貼り付けが終わってから消す
+                finally:
+                    # キャンセル・例外でも必ず消す(秘密の値を端末のクリップボードに残さない)
+                    await asyncio.shield(self._clear_clipboard())
         logger.debug("control %s", m["type"])  # 内容(text)は出さない
         return {"type": "ack", "seq": seq, "ok": True}
 
+    async def _clear_clipboard(self) -> None:
+        try:
+            await self._send(encode_set_clipboard("", paste=False))
+            self._clipboard_dirty = False
+        except (OSError, RuntimeError):
+            logger.warning("could not clear device clipboard on %s", self.serial)
+
     async def stop(self) -> None:
+        if self._clipboard_dirty and self._writer:
+            await self._clear_clipboard()  # 貼り付け後に消せていない場合の最後の機会
         if self._drain_task:
             self._drain_task.cancel()
             self._drain_task = None
