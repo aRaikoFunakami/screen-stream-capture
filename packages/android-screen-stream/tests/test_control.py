@@ -261,3 +261,21 @@ def test_control_jar_does_not_share_the_stream_jar_path():
     """映像側と同じ端末へ同時に push するので、同じパスに書き合わない."""
     from android_screen_stream.client import ScrcpyClient
     assert ScrcpyControlClient.DEVICE_JAR_PATH != ScrcpyClient.DEVICE_JAR_PATH
+
+
+async def test_send_gives_up_when_the_device_stops_reading(tmp_path, monkeypatch):
+    """端末・adb が読まずに止まっても送信で永久に待たない(端末の枠を握り続けない)."""
+    import android_screen_stream.control as control
+    monkeypatch.setattr(control, "SEND_TIMEOUT", 0.05, raising=False)
+    jar = tmp_path / "s.jar"
+    jar.write_bytes(b"")
+    ctl = ScrcpyControlClient("dummy", str(jar))
+
+    class _Stalled(_FakeWriter):
+        async def drain(self):
+            await asyncio.sleep(1)
+
+    ctl._writer, ctl._size = _Stalled(), (100, 100)
+    with pytest.raises(RuntimeError):
+        await ctl.handle({"type": "key", "key": "Enter"})
+    assert ctl._writer.closed

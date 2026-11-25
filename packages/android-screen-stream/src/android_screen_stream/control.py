@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 MAX_TEXT_LEN = 256
 CONNECT_TIMEOUT = 8.0
 ADB_TIMEOUT = 15.0
+SEND_TIMEOUT = 5.0  # 端末・adb が読まずに止まったとき、送信で永久に待たない(接続を閉じて端末の枠を空ける)
 
 # Android KeyEvent のキーコード
 _KEYCODES = {
@@ -234,7 +235,11 @@ class ScrcpyControlClient:
         if not self._writer or self._writer.is_closing():
             raise RuntimeError("control channel is not started or was closed")
         self._writer.write(data)
-        await self._writer.drain()
+        try:
+            await asyncio.wait_for(self._writer.drain(), timeout=SEND_TIMEOUT)
+        except asyncio.TimeoutError:
+            self._writer.close()
+            raise RuntimeError("control channel stalled (device is not reading input)")
 
     def _xy(self, nx: float, ny: float) -> tuple[int, int]:
         w, h = self._size
@@ -330,6 +335,7 @@ class ScrcpyControlClient:
             await self._clear_clipboard()  # 貼り付け後に消せていない場合の最後の機会
         if self._drain_task:
             self._drain_task.cancel()
+            await asyncio.gather(self._drain_task, return_exceptions=True)
             self._drain_task = None
         if self._writer:
             self._writer.close()
@@ -346,6 +352,7 @@ class ScrcpyControlClient:
                         await asyncio.wait_for(self._server.wait(), timeout=3)
                     except asyncio.TimeoutError:
                         self._server.kill()
+                        await self._server.wait()
             except ProcessLookupError:
                 pass  # 既に終わっている(端末が抜けた・scrcpy が落ちた)
             self._server = None
