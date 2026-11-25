@@ -19,6 +19,7 @@ Usage:
 from .config import StreamConfig
 from .client import ScrcpyClient
 from .session import StreamSession, StreamManager
+from .control import ControlError, ScrcpyControlClient, parse_control_message
 
 __version__ = "0.1.0"
 
@@ -27,4 +28,7 @@ __all__ = [
     "ScrcpyClient",
     "StreamSession",
     "StreamManager",
+    "ScrcpyControlClient",
+    "ControlError",
+    "parse_control_message",
 ]

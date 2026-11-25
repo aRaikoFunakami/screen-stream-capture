@@ -224,21 +224,21 @@ export function H264Player({
       />
       
       {/* ステータスオーバーレイ */}
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
+      <div className="absolute top-2 left-2 z-20 pointer-events-none flex items-center gap-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
         <span className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
         <span>{getStatusLabel(status)}</span>
       </div>
 
       {/* 統計情報 */}
       {status === 'connected' && (
-        <div className="absolute bottom-2 left-2 z-20 bg-black/50 text-white px-2 py-1 rounded text-xs">
+        <div className="absolute bottom-2 left-2 z-20 pointer-events-none bg-black/50 text-white px-2 py-1 rounded text-xs">
           {formatBytes(stats.bytes)} / {stats.chunks} chunks
         </div>
       )}
 
       {/* 再接続ボタン */}
       {(status === 'disconnected' || status === 'error') && !autoReconnect && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70">
           <button
             onClick={connect}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
