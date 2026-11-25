@@ -148,7 +148,8 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
     if (!p) return
     e.preventDefault()  // 端末だけをスクロールし、外側のページは動かさない
     const w = wheelRef.current
-    w.dy += e.deltaY
+    // 行単位(Firefox 等)・ページ単位のホイールをピクセルに揃える(1 行 ≒ 40px)
+    w.dy += e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? window.innerHeight : 1)
     w.p = p
     if (w.timer) return
     w.timer = setTimeout(() => {
