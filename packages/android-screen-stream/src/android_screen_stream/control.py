@@ -131,7 +131,8 @@ class ScrcpyControlClient:
             await ctl.handle({"type": "pointer", "action": "down", "x": 0.5, "y": 0.5})
     """
 
-    DEVICE_JAR_PATH = "/data/local/tmp/scrcpy-server.jar"
+    # 映像側(ScrcpyClient)と同じ端末へ同時に push するので、同じパスに書き合わないよう別のファイルにする
+    DEVICE_JAR_PATH = "/data/local/tmp/scrcpy-server-control.jar"
     SERVER_VERSION = "3.3.4"
 
     def __init__(self, serial: str, server_jar: str, *, connect_host: Optional[str] = None, local_port: int = 0):
@@ -167,8 +168,11 @@ class ScrcpyControlClient:
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=ADB_TIMEOUT)
         except asyncio.TimeoutError:
-            proc.kill()
             raise RuntimeError(f"adb {' '.join(args[:2])} timed out")
+        finally:
+            if proc.returncode is None:  # タイムアウト・取り消しでも子プロセスを残さない
+                proc.kill()
+                await proc.wait()
         if proc.returncode:
             raise RuntimeError(f"adb {' '.join(args[:2])} failed: {err.decode().strip()}")
         return out.decode()
@@ -221,11 +225,14 @@ class ScrcpyControlClient:
             while self._reader and await self._reader.read(4096):
                 pass
         except (OSError, asyncio.CancelledError):
-            pass
+            return
+        if self._writer:  # 端末側が閉じた(サーバ終了・端末の再起動)。以後の送信を失敗させ、接続を閉じさせる
+            logger.warning("control server on %s closed the connection", self.serial)
+            self._writer.close()
 
     async def _send(self, data: bytes) -> None:
-        if not self._writer:
-            raise RuntimeError("control channel is not started")
+        if not self._writer or self._writer.is_closing():
+            raise RuntimeError("control channel is not started or was closed")
         self._writer.write(data)
         await self._writer.drain()
 
@@ -311,6 +318,7 @@ class ScrcpyControlClient:
     async def stop(self) -> None:
         if self._refresh_task:
             self._refresh_task.cancel()
+            await asyncio.gather(self._refresh_task, return_exceptions=True)  # 中の adb を止め終えるまで待つ
             self._refresh_task = None
         if self._down and self._writer:
             try:  # 押したまま切れた場合、端末に指が残らないように離す

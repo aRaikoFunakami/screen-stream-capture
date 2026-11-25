@@ -168,8 +168,10 @@ export function RemoteControlLayer({ controlUrl, authToken, videoEl, fit = 'cont
     el?.addEventListener('wheel', h, { passive: false })
     return () => {
       el?.removeEventListener('wheel', h)
-      const t = wheelRef.current.timer
-      if (t) clearTimeout(t)
+      const w = wheelRef.current
+      if (w.timer) clearTimeout(w.timer)
+      w.timer = null  // 付け直し(StrictMode・Fast Refresh)の後もホイールを送れるように
+      w.dy = 0
     }
   }, [])
 

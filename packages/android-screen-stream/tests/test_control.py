@@ -95,7 +95,13 @@ async def test_tap_and_type_ascii_and_japanese_on_device():
 
 class _FakeWriter:
     def __init__(self, fail_after=None):
-        self.sent, self.fail_after = [], fail_after
+        self.sent, self.fail_after, self.closed = [], fail_after, False
+
+    def is_closing(self):
+        return self.closed
+
+    def close(self):
+        self.closed = True
 
     def write(self, data):
         self.sent.append(data)
@@ -236,3 +242,22 @@ async def test_only_the_held_gesture_is_replayed_after_size_change(tmp_path):
     await ctl._refresh_task
     # 押したままのドラッグだけを送り直す(済んだタップと wheel は二重にしない)
     assert ctl._writer.sent[5:] == [encode_touch(a, 100, 200, 1000, 2000) for a in ("down", "move")]
+
+
+async def test_server_eof_makes_later_sends_fail(tmp_path):
+    """端末側のサーバが終わったら、以後の入力を ok で返さず失敗させる(接続を閉じて端末の枠を空けさせる)."""
+    jar = tmp_path / "s.jar"
+    jar.write_bytes(b"")
+    ctl = ScrcpyControlClient("dummy", str(jar))
+    reader = asyncio.StreamReader()
+    reader.feed_eof()
+    ctl._reader, ctl._writer, ctl._size = reader, _FakeWriter(), (100, 100)
+    await ctl._drain()
+    with pytest.raises(RuntimeError):
+        await ctl.handle({"type": "key", "key": "Enter"})
+
+
+def test_control_jar_does_not_share_the_stream_jar_path():
+    """映像側と同じ端末へ同時に push するので、同じパスに書き合わない."""
+    from android_screen_stream.client import ScrcpyClient
+    assert ScrcpyControlClient.DEVICE_JAR_PATH != ScrcpyClient.DEVICE_JAR_PATH
